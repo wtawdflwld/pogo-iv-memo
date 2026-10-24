@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {detectBars} from '../public/lib/vision.js';import {locateCPDigits,agreeCP} from '../public/lib/ocr.js';
+import {detectBars} from '../public/lib/vision.js';import {locateCPDigits,agreeCP,recognizeCP} from '../public/lib/ocr.js';
 // Generated shapes and colors only. No pixels from private screenshots.
 function header(color=[255,255,255,255],prefix=true){
  const width=360,height=780,data=new Uint8ClampedArray(width*height*4);for(let i=3;i<data.length;i+=4)data[i]=255;
@@ -15,6 +15,11 @@ test('synthetic blue-gray tracks remain readable when their blue channel exceeds
 test('CP header localization separates small prefix shapes from taller digits, including tinted antialiasing',()=>{
  for(const color of [[255,255,255,255],[170,205,220,255]]){const f=header(color),r=locateCPDigits(f)||locateCPDigits(f,150);assert.ok(r);assert.ok(r.x>152&&r.x<156);assert.ok(r.y<46&&r.y>40);assert.ok(r.width>=50&&r.width<=58);}
 });
+test('a retained top-only header uses the original frame height to locate CP digits',()=>{
+ const full=header(),height=Math.ceil(full.height*.24),cropped={width:full.width,height,data:full.data.slice(0,full.width*height*4)};
+ assert.deepEqual(locateCPDigits(cropped,185,full.height),locateCPDigits(full));
+ assert.equal(locateCPDigits(cropped),null);
+});
 test('bare numbers and a header without the small prefix cannot be interpreted as CP',()=>{
  assert.equal(agreeCP([{text:'582',confidence:99},{text:'582',confidence:99}]).cp,null);
  assert.equal(locateCPDigits(header(undefined,false)),null);assert.equal(locateCPDigits(header(undefined,false),150),null);
@@ -23,4 +28,20 @@ test('localized numeric CP reads still reject disagreement, low confidence and i
  const r=(text,confidence=90)=>({text,confidence,digits:true});assert.equal(agreeCP([r('582'),r('582')]).cp,582);
  assert.equal(agreeCP([r('582'),r('587')]).cp,null);assert.equal(agreeCP([r('0'),r('0')]).cp,null);
  assert.equal(agreeCP([r('582',10),r('582',10)]).cp,null);
+});
+async function retryCase(outputs){
+ const previous=globalThis.document,parameters=[],draws=[],image=header();
+ globalThis.document={createElement:()=>({getContext:()=>({fillRect(){},drawImage(...args){draws.push(args)},putImageData(){}})})};
+ const worker={setParameters:async p=>{parameters.push(p)},recognize:async()=>{const [text,confidence]=outputs.shift();return {data:{text,confidence}}}};
+ try{return {result:await recognizeCP(worker,{width:image.width,height:image.height,getContext:()=>({getImageData:()=>({...image,data:image.data.slice()})})}),parameters,draws};}finally{globalThis.document=previous;}
+}
+test('a prefix-verified raw digit line can recover when both masked reads are empty',async()=>{
+ const {result,parameters,draws}=await retryCase([['',0],['',0],['',0],['',0],['582',90],['582',90]]);
+ assert.equal(result.cp,582);assert.equal(result.conflict,false);assert.equal(parameters.length,6);
+ assert.deepEqual(parameters.slice(-2).map(p=>p.tessedit_pageseg_mode),['7','13']);assert.ok(parameters.slice(-2).every(p=>p.tessedit_char_whitelist==='0123456789'));
+ const region=locateCPDigits(header());assert.ok(draws.slice(-2).every(args=>args[1]===region.x+3&&args[3]===region.width-6));
+});
+test('additional digit segmentation cannot conceal conflicting dedicated CP readings',async()=>{
+ const {result}=await retryCase([['CP582',90],['CP587',90],['582',90],['582',90],['582',90],['582',90]]);
+ assert.equal(result.cp,null);assert.equal(result.conflict,true);
 });

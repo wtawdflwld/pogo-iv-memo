@@ -8,8 +8,8 @@ export function fieldRects(width,height){return {
 };}
 // Find the CP header from pixels, without depending on the island's dimensions.
 // GO renders the two CP letters smaller than the adjacent decimal digits.
-export function locateCPDigits(image,minBrightness=185){
- const {width:w,height:h,data}=image;if(data.length!==w*h*4)return null;
+export function locateCPDigits(image,minBrightness=185,frameHeight=image.height){
+ const {width:w,height:pixelHeight,data}=image,h=frameHeight;if(data.length!==w*pixelHeight*4||!Number.isFinite(h)||h<pixelHeight||pixelHeight<h*.24)return null;
  const left=Math.floor(w*.23),top=Math.floor(h*.035),right=Math.ceil(w*.70),bottom=Math.ceil(h*.16),rw=right-left,rh=bottom-top;
  const mask=new Uint8Array(rw*rh),seen=new Uint8Array(mask.length),parts=[];
  for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){const i=((y+top)*w+x+left)*4,r=data[i],g=data[i+1],b=data[i+2];mask[y*rw+x]=Math.min(r,g,b)>minBrightness&&Math.max(r,g,b)-Math.min(r,g,b)<(minBrightness<185?85:42)?1:0;}
@@ -65,22 +65,46 @@ export function agreeCP(readings){
  const values=[...new Set(valid.map(r=>r.value))];
  return {cp:values.length===1&&(valid.length>=2||valid[0].confidence>=75)?values[0]:null,conflict:values.length>1};
 }
-// Each field has its own segmentation and alphabet. Never OCR the model and
-// dialogue as one uniform paragraph, or reinterpret HP digits as CP.
-export async function recognizeFields(worker,canvas,pokemon){
- const rects=fieldRects(canvas.width,canvas.height),trace=[],cpReadings=[];
- async function read(label,rect,enhance,whitelist='',psm='11',threshold=null,prepared=null){
+function textReader(worker,canvas,trace){
+ return async function read(label,rect,enhance,whitelist='',psm='11',threshold=null,prepared=null){
   await worker.setParameters({tessedit_pageseg_mode:psm,tessedit_char_whitelist:whitelist,preserve_interword_spaces:'1',user_defined_dpi:'300'});
   const {data}=await worker.recognize(prepared||(threshold==null?cropText(canvas,rect,enhance):cpDigitImage(canvas,rect,threshold)));
   const result={text:data.text||'',confidence:data.confidence||0};trace.push(`[${label} / 信頼度 ${Math.round(result.confidence)}]\n${result.text}`);return result;
- }
+ };
+}
+async function readCPFields(read,canvas,trace,frameHeight=canvas.height){
+ const rect=fieldRects(canvas.width,frameHeight).cp,cpReadings=[];
  const whitelist='CPcp0123456789OIlSB,.';
- cpReadings.push(await read('CP 原画像',rects.cp,false,whitelist));
- cpReadings.push(await read('CP コントラスト補正',rects.cp,true,whitelist));
+ cpReadings.push(await read('CP 原画像',rect,false,whitelist));
+ cpReadings.push(await read('CP コントラスト補正',rect,true,whitelist));
  if(agreeCP(cpReadings).cp==null){
-  const pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height),region=locateCPDigits(pixels)||locateCPDigits(pixels,150);
-  if(region){for(const threshold of [region.threshold,region.threshold+20])cpReadings.push({...await read(`CP 数字分離 ${threshold}`,region,false,'0123456789','7',threshold),digits:true});}
+  const pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height),region=locateCPDigits(pixels,185,frameHeight)||locateCPDigits(pixels,150,frameHeight);
+  if(region){
+   trace.push(`[CP 数字位置]\nx=${region.x}, y=${region.y}, 幅=${region.width}, 高さ=${region.height}`);
+   for(const threshold of [region.threshold,region.threshold+20])cpReadings.push({...await read(`CP 数字分離 ${threshold}`,region,false,'0123456789','7',threshold),digits:true});
+   // Hard masks can break thin or compressed strokes. Raw-line segmentation
+   // on the same prefix-verified digits preserves their antialiased edges.
+   if(agreeCP(cpReadings).cp==null){
+    // Exclude the localization padding: it can include the trailing stroke
+    // of the smaller P, which a raw-line reader would mistake for another 1.
+    const tight={...region,x:region.x+3,width:region.width-6};
+    for(const psm of ['7','13'])cpReadings.push({...await read(`CP 数字輪郭1行 ${psm}`,tight,true,'0123456789',psm),digits:true});
+   }
+  }
+  else trace.push('[CP 数字分離]\n見出しと数字の位置を特定できません');
  }
+ return cpReadings;
+}
+// Retry only the header. Header canvases retain their original width but only
+// the top 24% of the frame, so extra video frames do not retain full images.
+export async function recognizeCP(worker,canvas,frameHeight=canvas.height){
+ const trace=[],read=textReader(worker,canvas,trace),readings=await readCPFields(read,canvas,trace,frameHeight);
+ return {...agreeCP(readings),text:trace.join('\n')};
+}
+// Each field has its own segmentation and alphabet. Never OCR the model and
+// dialogue as one uniform paragraph, or reinterpret HP digits as CP.
+export async function recognizeFields(worker,canvas,pokemon){
+ const rects=fieldRects(canvas.width,canvas.height),trace=[],read=textReader(worker,canvas,trace),cpReadings=await readCPFields(read,canvas,trace);
  const name=await read('名前',rects.name,true);let match=matchSpecies(name.text,pokemon),confidence=name.confidence;
  if(!match.exact){
   const retry=await read('名前 文字のみ',rects.name,false,'','7',null,nameTextImage(canvas,rects.name)),alternative=matchSpecies(retry.text,pokemon);

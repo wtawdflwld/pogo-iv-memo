@@ -1,5 +1,6 @@
 import {StableScenes,BarConsensus} from './vision.js';
-import {recognizeFields} from './ocr.js';
+import {recognizeFields,recognizeCP} from './ocr.js';
+const READER_VERSION='1.2.1';
 let ocrPromise,currentOCRProgress=()=>{},visionWorker,jobId=0;const visionJobs=new Map();
 export function inspectCanvas(canvas,calibration=null){
  if(!visionWorker){visionWorker=new Worker(new URL('./vision-worker.js',import.meta.url),{type:'module'});visionWorker.onmessage=({data})=>{const j=visionJobs.get(data.id);if(j){visionJobs.delete(data.id);data.error?j.reject(Error(data.error)):j.resolve(data.result);}};visionWorker.onerror=e=>{for(const j of visionJobs.values())j.reject(Error(e.message||'画像解析Workerに失敗'));visionJobs.clear();visionWorker.terminate();visionWorker=null;};}
@@ -40,7 +41,50 @@ export async function analyzeCanvas(canvas,pokemon,source,onProgress,calibration
  if(conflict)notes.push('CPの複数回の読み取りが一致しないため、値を空欄にしました');
  if(ocrError)notes.push('OCRに失敗: '+ocrError);
  notes.push('自動読取は候補です。種類・フォルム・IVを確認して確定してください');
- return emptyRecord(source,{speciesId:match.id,atk:bars.ivs[0],def:bars.ivs[1],hp:bars.ivs[2],cp,thumbnail,ocrText:text,candidates:match.candidates,formEvidence:match.evidence||null,geometry:bars.geometry,confidence:{bars:bars.confidence,ocr:confidence},notes});
+ return emptyRecord(source,{speciesId:match.id,atk:bars.ivs[0],def:bars.ivs[1],hp:bars.ivs[2],cp,thumbnail,readerVersion:READER_VERSION,ocrText:`[読取 v${READER_VERSION} / ${canvas.width}×${canvas.height}]\n${text}`,candidates:match.candidates,formEvidence:match.evidence||null,geometry:bars.geometry,confidence:{bars:bars.confidence,ocr:confidence},notes});
+}
+function cpHeader(canvas){
+ const header=document.createElement('canvas');header.width=canvas.width;header.height=Math.ceil(canvas.height*.24);
+ header.getContext('2d').drawImage(canvas,0,0,header.width,header.height,0,0,header.width,header.height);return header;
+}
+// This buffer belongs to one detected page and one settled IV triple only.
+// Bound memory independently of video duration; preserve separated moments
+// rather than three adjacent frames with the same compression damage.
+export class CPFrameBuffer{
+ constructor(){this.frames=[];}
+ clear(){this.frames=[];}
+ push(canvas,bars,time){
+  const last=this.frames.at(-1),same=last&&JSON.stringify(last.ivs)===JSON.stringify(bars.ivs);
+  if(!same)this.clear();
+  const previous=this.frames.at(-1),replace=previous&&time-previous.since<.55;
+  const frame={canvas:cpHeader(canvas),frameHeight:canvas.height,ivs:[...bars.ivs],time,since:replace?previous.since:time};
+  if(replace)this.frames[this.frames.length-1]=frame;else this.frames.push(frame);
+  if(this.frames.length>3)this.frames.shift();
+ }
+ earlier(time){return this.frames.filter(f=>time-f.time>=.15).slice(-2);}
+}
+async function recoverVideoCP(record,frames,signal,onProgress){
+ if(record.cp!=null||signal.aborted)return;
+ if(frames.length<2){record.ocrText+='\n[CP フレーム間一致]\n再読取用の別フレームが2枚未満。空欄を維持';return;}
+ const readings=[];
+ for(const frame of frames){
+  if(signal.aborted)return;
+  try{
+   onProgress({status:'同じ場面の別フレームからCPを再読取'});
+   const result=await recognizeCP(await getOCR(onProgress),frame.canvas,frame.frameHeight);
+   record.ocrText+=`\n[CP 別フレーム ${frame.time.toFixed(2)}秒]\n${result.text}`;readings.push({...result,time:frame.time});
+  }catch(e){record.ocrText+=`\n[CP 別フレーム ${frame.time.toFixed(2)}秒]\n失敗: ${e.message}`;}
+ }
+ if(signal.aborted)return;
+ const valid=readings.filter(r=>r.cp!=null),values=new Set(valid.map(r=>r.cp));
+ if(valid.length>=2&&values.size===1){
+  record.cp=valid[0].cp;record.cpEvidence={method:'scene-consensus',times:valid.map(r=>r.time)};
+  record.notes=record.notes.filter(n=>n!=='現在CPを読めません'&&!n.startsWith('CPの複数回の読み取り'));
+  record.notes.push('代表フレームのCP読取が不安定だったため、同じ場面の別2フレームで一致したCPを採用しました。画像と照合してください');
+  record.ocrText+=`\n[CP フレーム間一致]\n${record.cp} / ${valid.length}フレーム`;
+ }else{
+  record.ocrText+='\n[CP フレーム間一致]\n'+(values.size>1?'異なる値を検出。空欄を維持':'一致を確認できる2フレームが不足。空欄を維持');
+ }
 }
 function eventOnce(el,event,timeout=20000,trigger=null){return new Promise((resolve,reject)=>{
  const timer=setTimeout(()=>finish(Error(`${event}を待機中に時間切れ。動画形式・長さをご確認ください`)),timeout);
@@ -67,15 +111,17 @@ export async function importVideo(file,pokemon,{onProgress,onRecord,signal,inter
  try{
   const ready=eventOnce(video,'loadeddata');video.src=url;video.load();await ready;
   const {duration,estimated}=await videoDuration(video,durationHint);
-  const detector=new StableScenes();let consensus=new BarConsensus(),group=0,pending=null,fallback=null,groupSamples=0,previousTarget=-1;
+  const detector=new StableScenes(),cpFrames=new CPFrameBuffer();let consensus=new BarConsensus(),group=0,pending=null,fallback=null,groupSamples=0,previousTarget=-1;
   async function flush(){
    const selected=pending||(groupSamples>=3?fallback:null);
    if(selected){
     const {canvas,time}=selected,bars=pending?selected.bars:{...selected.bars,ivs:[null,null,null],confidence:0};
-    const r=await analyzeCanvas(canvas,pokemon,{kind:'video',...source,file:file.name,time},m=>onProgress({phase:'ocr',message:m.status,fraction:time/duration,time,duration,sampled,scenes,skipped}),null,bars);
+    const ocrProgress=m=>onProgress({phase:'ocr',message:m.status,fraction:time/duration,time,duration,sampled,scenes,skipped});
+    const r=await analyzeCanvas(canvas,pokemon,{kind:'video',...source,file:file.name,time},ocrProgress,null,bars);
+    if(pending)await recoverVideoCP(r,cpFrames.earlier(time),signal,ocrProgress);
     if(!signal.aborted){r.notes.push(pending?'同じ場面の3フレーム以上で一致したバーを採用。短い表示場面は取りこぼす場合があります':'バーは見つかりましたが、最後の値が3フレーム以上で一致しません。画像と照らし合わせてIVを入力してください');await onRecord(r);scenes++;}
    }else if(groupSamples)skipped++;
-   pending=null;fallback=null;groupSamples=0;
+   pending=null;fallback=null;groupSamples=0;cpFrames.clear();
   }
   for(let step=0;step<=Math.ceil(duration/interval);step++){
    if(signal.aborted)break;
@@ -90,11 +136,11 @@ export async function importVideo(file,pokemon,{onProgress,onRecord,signal,inter
    onProgress({phase:'video',fraction:target/duration,time:target,duration,sampled,scenes,skipped});
    if(bars.geometry&&scene.stable){
     fallback={canvas,bars,time:target};
-    if(pending&&JSON.stringify(pending.bars.ivs)!==JSON.stringify(bars.ivs))pending=null;
+    if(pending&&JSON.stringify(pending.bars.ivs)!==JSON.stringify(bars.ivs)){pending=null;cpFrames.clear();}
    }
    // Keep the latest settled result until the page changes: an early plateau
    // in the appraisal animation must not freeze an intermediate IV forever.
-   if(consensus.push(bars)&&scene.stable)pending={canvas,bars,time:target};
+   if(consensus.push(bars)&&scene.stable){pending={canvas,bars,time:target};cpFrames.push(canvas,bars,target);}
    // Yield on every frame; decoding/OCR also run asynchronously.
    await new Promise(r=>setTimeout(r,0));
   }
