@@ -43,29 +43,43 @@ export async function analyzeCanvas(canvas,pokemon,source,onProgress,calibration
  notes.push('自動読取は候補です。種類・フォルム・IVを確認して確定してください');
  return emptyRecord(source,{speciesId:match.id,atk:bars.ivs[0],def:bars.ivs[1],hp:bars.ivs[2],cp,thumbnail,ocrText:text,candidates:match.candidates,geometry:bars.geometry,confidence:{bars:bars.confidence,ocr:confidence},notes});
 }
-function eventOnce(el,event,timeout=20000){return new Promise((resolve,reject)=>{
+function eventOnce(el,event,timeout=20000,trigger=null){return new Promise((resolve,reject)=>{
  const timer=setTimeout(()=>finish(Error(`${event}を待機中に時間切れ。動画形式・長さをご確認ください`)),timeout);
  const ok=()=>finish(),error=()=>finish(Error('動画をデコードできません。このブラウザーで再生できる形式を選んでください'));
  function finish(e){clearTimeout(timer);el.removeEventListener(event,ok);el.removeEventListener('error',error);e?reject(e):resolve();}
  el.addEventListener(event,ok,{once:true});el.addEventListener('error',error,{once:true});
+ try{trigger?.();}catch(e){finish(e);}
 });}
-export async function importVideo(file,pokemon,{onProgress,onRecord,signal,interval=.45}) {
+export async function videoDuration(video,hint=null){
+ if(Number.isFinite(video.duration)&&video.duration>0)return {duration:video.duration,estimated:false};
+ const seekable=video.seekable?.length?video.seekable.end(video.seekable.length-1):0;
+ if(Number.isFinite(seekable)&&seekable>0)return {duration:seekable,estimated:false};
+ // Some recorder containers omit duration. The capture's wall-clock is a
+ // bounded upper limit, never infer a multi-year video from the probe target.
+ if(Number.isFinite(hint)&&hint>0&&hint<=28800)return {duration:hint,estimated:true};
+ const target=1e7;await eventOnce(video,'seeked',20000,()=>{video.currentTime=target;});
+ const actual=Number.isFinite(video.duration)&&video.duration>0?video.duration:video.currentTime;
+ if(!Number.isFinite(actual)||actual<=0||actual>=target)throw Error('動画の長さを取得できません。画面収録を保存し直すか、ライブキャプチャを再実行してください');
+ await eventOnce(video,'seeked',20000,()=>{video.currentTime=0;});return {duration:actual,estimated:false};
+}
+export async function importVideo(file,pokemon,{onProgress,onRecord,signal,interval=.45,source={},durationHint=null}) {
  const video=document.createElement('video'),url=URL.createObjectURL(file);video.muted=true;video.playsInline=true;video.preload='auto';video.className='decode-video';document.body.append(video);
  let sampled=0,scenes=0,skipped=0;
  try{
   const ready=eventOnce(video,'loadeddata');video.src=url;video.load();await ready;
-  if(!Number.isFinite(video.duration)||video.duration<=0)throw Error('動画の長さを取得できません。画面収録を写真アプリで保存し直してください');
+  const {duration,estimated}=await videoDuration(video,durationHint);
   const detector=new StableScenes();let previousBars=null;
-  for(let time=0;time<video.duration;time+=interval){
+  for(let time=0;time<duration;time+=interval){
    if(signal.aborted)break;
-   const target=Math.min(time,Math.max(0,video.duration-.05));
-   if(Math.abs(video.currentTime-target)>.015){const seeked=eventOnce(video,'seeked');video.currentTime=target;await seeked;}
+   const target=Math.min(time,Math.max(0,duration-.05));
+   if(Math.abs(video.currentTime-target)>.015)await eventOnce(video,'seeked',20000,()=>{video.currentTime=target;});
+   if(estimated&&video.currentTime<target-.25)break;
    if(signal.aborted)break;
    const canvas=canvasFrom(video),inspection=await inspectCanvas(canvas),scene=detector.push(inspection.hash),bars=inspection.bars;sampled++;
-   onProgress({phase:'video',fraction:target/video.duration,time:target,duration:video.duration,sampled,scenes,skipped});
+   onProgress({phase:'video',fraction:target/duration,time:target,duration,sampled,scenes,skipped});
    if(scene.newScene){
     if(bars.geometry && previousBars?.geometry && JSON.stringify(bars.ivs)===JSON.stringify(previousBars.ivs)){
-     const r=await analyzeCanvas(canvas,pokemon,{kind:'video',file:file.name,time:target},m=>onProgress({phase:'ocr',message:m.status,fraction:target/video.duration,time:target,duration:video.duration,sampled,scenes,skipped}),null,bars);
+     const r=await analyzeCanvas(canvas,pokemon,{kind:'video',...source,file:file.name,time:target},m=>onProgress({phase:'ocr',message:m.status,fraction:target/duration,time:target,duration,sampled,scenes,skipped}),null,bars);
      if(signal.aborted)break;
      r.notes.push('動画の安定画面から抽出。短い表示場面は取りこぼす場合があります');await onRecord(r);scenes++;
     }else if(bars.geometry){detector.emitted=false;}else{skipped++;}
@@ -74,6 +88,6 @@ export async function importVideo(file,pokemon,{onProgress,onRecord,signal,inter
    // Yield on every frame; decoding/OCR also run asynchronously.
    await new Promise(r=>setTimeout(r,0));
   }
-  return {sampled,scenes,skipped,cancelled:signal.aborted};
+  return {sampled,scenes,skipped,cancelled:signal.aborted,duration,durationEstimated:estimated};
  }finally{video.pause();video.removeAttribute('src');video.load();video.remove();URL.revokeObjectURL(url);}
 }

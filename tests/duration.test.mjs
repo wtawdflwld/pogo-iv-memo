@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {videoDuration} from '../public/lib/media.js';
+test('recorder videos with no duration use bounded capture duration, not Infinity',async()=>{assert.deepEqual(await videoDuration({duration:Infinity},12),{duration:12,estimated:true});assert.deepEqual(await videoDuration({duration:4},12),{duration:4,estimated:false});assert.deepEqual(await videoDuration({duration:Infinity,seekable:{length:1,end:()=>5}}),{duration:5,estimated:false});});
+class Probe extends EventTarget{duration=Infinity;t=0;fail=false;set currentTime(t){if(this.fail)throw Error('cannot seek');this.t=t;if(t===1e7)this.duration=3;queueMicrotask(()=>this.dispatchEvent(new Event('seeked')));}get currentTime(){return this.t;}}
+test('unknown file duration probes to actual EOF and resets playback position',async()=>{const v=new Probe();assert.deepEqual(await videoDuration(v),{duration:3,estimated:false});assert.equal(v.currentTime,0);});
+test('synchronous seek failure rejects without leaving a dangling event timeout',async()=>{const v=new Probe();v.fail=true;await assert.rejects(videoDuration(v),/cannot seek/);});
