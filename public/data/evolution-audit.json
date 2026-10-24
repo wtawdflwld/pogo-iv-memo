@@ -1,0 +1,1 @@
+{"retrieved":"2026-10-24","commit":"8e227be44f288d34463e23bf04e9b564d3c16f79","source":"https://github.com/PokeMiners/game_masters/blob/8e227be44f288d34463e23bf04e9b564d3c16f79/latest/latest.json","sha256":"5c947ac64d1de8859bea1b3bf044609d74b6e8429d53f8cb1aa30a72a46dce84","note":"進化先・性別・アイテム・相棒・時間帯の事実パラメータのみ抽出。全文やゲーム素材は同梱しない。通常進化ルートのないバサギリ／アヤシシ等へは遷移しない。期間限定の別地方進化は常設候補に含めない。"}

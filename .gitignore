@@ -1,0 +1,13 @@
+dist/
+.downloads/
+node_modules/
+*.log
+*.zip
+test-output/
+.DS_Store
+Thumbs.db
+# 個人の動画・画像はコミットしない
+imports/
+*.mov
+*.mp4
+*.heic

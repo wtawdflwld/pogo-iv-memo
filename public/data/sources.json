@@ -1,0 +1,78 @@
+{
+  "retrieved": "2026-10-24",
+  "pvpoke": "38f70320d190e38c2e6c778f572662b4c4e8185d",
+  "pokeapi": "2bf639e5572812a67d2b94903fdcb9d095f5aeb2",
+  "pokemon": 1074,
+  "files": [
+    {
+      "url": "https://api.github.com/repos/pvpoke/pvpoke/commits/HEAD",
+      "file": ".downloads/pvpoke-pvpoke-commit.json",
+      "sha256": "362d6eaf4998c661d527fce30e38a239bc95e037b4de4bd7447512e18cbfc1ca"
+    },
+    {
+      "url": "https://api.github.com/repos/PokeAPI/pokeapi/commits/HEAD",
+      "file": ".downloads/PokeAPI-pokeapi-commit.json",
+      "sha256": "473c03f7fcb8d1b6acaeb8ef1df5b212a597ff34688972fe043fe54197873a73"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/pvpoke/pvpoke/38f70320d190e38c2e6c778f572662b4c4e8185d/src/data/gamemaster.json",
+      "file": ".downloads/gamemaster.json",
+      "sha256": "665b820f60968a9927b1e78b16166df96b669ed1252db1d1de486cceba9adab9"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/pvpoke/pvpoke/38f70320d190e38c2e6c778f572662b4c4e8185d/src/js/pokemon/Pokemon.js",
+      "file": ".downloads/Pokemon.js",
+      "sha256": "10893308f8e8b408d396d19e541d7482c9657dd9c07fd6c8c9bf8f783669c47d"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/PokeAPI/pokeapi/2bf639e5572812a67d2b94903fdcb9d095f5aeb2/data/v2/csv/pokemon_species_names.csv",
+      "file": ".downloads/names.csv",
+      "sha256": "820cde17074cdb1c2b0595c997fb8f998e773bd5da3bb525dec85703c86c5fd9"
+    },
+    {
+      "url": "https://api.github.com/repos/PokeMiners/game_masters/commits/HEAD",
+      "file": ".downloads/PokeMiners-game_masters-commit.json",
+      "sha256": "c0c0fece0d72c3c0857ef9cdafe04cd35cd8af5da68a094a4a6608c9b39ab25b"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/PokeMiners/game_masters/8e227be44f288d34463e23bf04e9b564d3c16f79/latest/latest.json",
+      "file": ".downloads/miners-pinned.json",
+      "sha256": "5c947ac64d1de8859bea1b3bf044609d74b6e8429d53f8cb1aa30a72a46dce84"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/pvpoke/pvpoke/38f70320d190e38c2e6c778f572662b4c4e8185d/LICENSE",
+      "file": "public/licenses/PvPoke.txt",
+      "sha256": "3c8500ea8ad3bc42dbaccaf2e0ebfb2950b7db69b3ed56b80d5805dd02078924"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/PokeAPI/pokeapi/2bf639e5572812a67d2b94903fdcb9d095f5aeb2/LICENSE.md",
+      "file": "public/licenses/PokeAPI.txt",
+      "sha256": "1c04595dc662981c20956ae4251dfa7b62b475c345eddf98bc9b904cb2373f2c"
+    },
+    {
+      "url": "https://registry.npmjs.org/tesseract.js/-/tesseract.js-6.0.1.tgz",
+      "file": ".downloads/tesseract.js.tgz",
+      "sha256": "4a208f2560a527ea9fc339ba2fdf125c13bca6638c194a149379601a1418d0ed"
+    },
+    {
+      "url": "https://registry.npmjs.org/tesseract.js-core/-/tesseract.js-core-6.0.0.tgz",
+      "file": ".downloads/tesseract.js-core.tgz",
+      "sha256": "197b53b6bc42b7270c99b079e438992096d71a2b9b8237c6349491bd22fbd5a0"
+    },
+    {
+      "url": "https://tessdata.projectnaptha.com/4.0.0_fast/jpn.traineddata.gz",
+      "file": "public/vendor/lang/jpn.traineddata.gz",
+      "sha256": "cac936a50547d9546d48bd6d46372fd89f1ba49209b678cf23ed938092688a28"
+    },
+    {
+      "url": "https://tessdata.projectnaptha.com/4.0.0_fast/eng.traineddata.gz",
+      "file": "public/vendor/lang/eng.traineddata.gz",
+      "sha256": "18c1ac52b75e35d44735fb6c2a60acfaf23033524653200738e98f0243edb75b"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/LICENSE",
+      "file": "public/licenses/tessdata.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  ]
+}
