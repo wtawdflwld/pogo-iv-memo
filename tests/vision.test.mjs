@@ -5,3 +5,7 @@ test('bars read reference IV 3/3/5 on synthetic track (not a real screenshot)',(
 test('empty/full bars and missing image pixels remain distinct',()=>{assert.deepEqual(detectBars(fixture([0,15,0])).ivs,[0,15,0]);assert.equal(readBar({width:360,height:780,data:new Uint8ClampedArray(360*780*4).fill(255)},35,484,180).value,null);});
 test('CP and species parsing do not infer a nickname or form',()=>{assert.equal(parseCP('CP599\n83/83 HP'),599);assert.equal(parseCP('83/83 HP'),null);const pokemon=[{id:'a',dex:155,name:'ヒノアラシ',english:'Cyndaquil'},{id:'b',dex:26,name:'ライチュウ',english:'Raichu'},{id:'c',dex:26,name:'ライチュウ',english:'Raichu (Alolan)'}];assert.equal(matchSpecies('ヒノアラシ\nCP599',pokemon).id,'a');assert.equal(matchSpecies('相棒ちゃん\nCP599',pokemon).id,null);assert.equal(matchSpecies('ライチュウ\nCP599',pokemon).id,null);});
 test('same screen emits once; changes permit a visually separate identical-value individual',()=>{const s=new StableScenes(),a=new Array(384).fill(10),b=new Array(384).fill(22);const emitted=[a,a,a,a,a,b,b,b,a,a,a].map(h=>s.push(h)).filter(x=>x.newScene);assert.equal(emitted.length,3);});
+test('a changed text signature starts a new page even when the broad background hash is identical',()=>{
+ const s=new StableScenes(),hash=new Array(384).fill(10),a=new Array(2048).fill(0),b=a.map((v,i)=>i<100?1:v);
+ const emitted=[a,a,a,a,b,b,b,b].map(page=>s.push(hash,page)).filter(x=>x.newScene);assert.equal(emitted.length,2);
+});

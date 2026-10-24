@@ -63,6 +63,16 @@ export function fingerprint(image) {
   }return out;
 }
 export function frameDistance(a,b){if(!a||!b)return Infinity;return a.reduce((sum,v,i)=>sum+Math.abs(v-b[i]),0)/a.length;}
+// Fine text signature distinguishes neighboring pages with the same type
+// background; the broad scene hash alone can miss a changed name or CP.
+export function pageFingerprint(image){
+ const {data,width:w,height:h}=image,out=[];
+ for(const [left,right,top,bottom,light] of [[.30,.66,.055,.095,true],[.15,.74,.40,.44,false]])
+  for(let yy=0;yy<16;yy++)for(let xx=0;xx<64;xx++){
+   const x=Math.round((left+(xx+.5)/64*(right-left))*w),y=Math.round((top+(yy+.5)/16*(bottom-top))*h),[r,g,b]=pixel(data,w,x,y);
+   out.push(light?(Math.min(r,g,b)>180&&Math.max(r,g,b)-Math.min(r,g,b)<85?1:0):(Math.max(r,g,b)<195?1:0));
+  }return out;
+}
 export function parseCP(text){
  const values=[...text.normalize('NFKC').matchAll(/c\s*p\s*[:.・]?\s*([0-9OIlSB]+(?:[ ,]+[0-9]+)*)(?![A-Za-z0-9])/gi)].map(m=>m[1].replace(/[ ,]/g,'').replace(/O/gi,'0').replace(/[Il]/g,'1').replace(/S/gi,'5').replace(/B/gi,'8')).filter(s=>/^\d{2,5}$/.test(s)).map(Number).filter(v=>v>=10&&v<=20000);
  const unique=[...new Set(values)];return unique.length===1?unique[0]:null;
@@ -80,8 +90,8 @@ export function matchSpecies(text,pokemon) {
   return {id:null,candidates:suggestions.map(p=>p.id),reason:suggestions.length?'読み取りに近い名前候補あり。種類・フォルムを選んで確認してください':'種類を特定できません（ニックネームを含む）'};
  }
  const forms=pokemon.filter(p=>p.dex===matches[0].dex);
- if(forms.length!==1)return {id:null,candidates:forms.map(p=>p.id),reason:'種類候補あり・フォルムを確認してください'};
- return {id:matches[0].id,candidates:[matches[0].id],reason:''};
+ if(forms.length!==1)return {id:null,candidates:forms.map(p=>p.id),exact:true,reason:'種類候補あり・フォルムを確認してください'};
+ return {id:matches[0].id,candidates:[matches[0].id],exact:true,reason:''};
 }
 function editDistance(a,b){let row=Array.from({length:b.length+1},(_,i)=>i);for(let i=0;i<a.length;i++){const next=[i+1];for(let j=0;j<b.length;j++)next.push(Math.min(next[j]+1,row[j+1]+1,row[j]+(a[i]===b[j]?0:1)));row=next;}return row[b.length];}
 export class BarConsensus{
@@ -93,10 +103,11 @@ export class BarConsensus{
  }
 }
 export class StableScenes {
- constructor(){this.previous=null;this.stableCount=0;this.emitted=false;this.scene=0;this.buffer=null;this.changing=0;}
- push(hash) {
+ constructor(){this.previous=null;this.page=null;this.stableCount=0;this.emitted=false;this.scene=0;this.buffer=null;this.changing=0;}
+ push(hash,page=null) {
   const distance=frameDistance(hash,this.previous);this.previous=hash;
-  if(distance>1.8){this.stableCount=0;this.changing++;if(this.changing>=1){this.emitted=false;this.scene++;}return {stable:false,newScene:false};}
+  const pageChanged=!!page&&!!this.page&&frameDistance(page,this.page)>.035;if(page&&(!this.page||pageChanged))this.page=page;
+  if(distance>1.8||pageChanged){this.stableCount=0;this.changing++;if(this.changing>=1){this.emitted=false;this.scene++;}return {stable:false,newScene:false};}
   this.changing=0;this.stableCount++;
   if(this.stableCount>=2&&!this.emitted){this.emitted=true;return {stable:true,newScene:true,scene:this.scene};}
   return {stable:this.stableCount>=2,newScene:false};

@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {readBar,parseCP,matchSpecies,fingerprint,BarConsensus} from '../public/lib/vision.js';
-import {agreeCP,recognizeFields} from '../public/lib/ocr.js';
+import {agreeCP,recognizeFields,nameTextImage} from '../public/lib/ocr.js';
 function image(iv,{pink=false,gaps=false,noise=false,partial=false}={}){
  const width=360,height=200,data=new Uint8ClampedArray(width*height*4).fill(255);
  for(let y=80;y<90;y++)for(let x=35;x<215;x++){
@@ -48,4 +48,18 @@ test('field OCR uses separate crops and whitelists and keeps conflicting CP blan
   assert.equal(result.cp,null);assert.equal(result.conflict,true);assert.equal(result.match.id,'cyndaquil');
   assert.ok(calls[0].tessedit_char_whitelist.includes('0123456789'));assert.equal(calls[2].tessedit_char_whitelist,'');assert.equal(outputs.length,0);
  }finally{globalThis.document=previous;}
+});
+test('a broad name/form fallback cannot erase a CP agreed by dedicated field reads',async()=>{
+ const previous=globalThis.document,outputs=[['CP582',90],['CP582',90],['ライチュウ',90],['CP58\nライチュウ',90]];
+ globalThis.document={createElement:()=>({getContext:()=>({fillRect(){},drawImage(){}})})};
+ const worker={async setParameters(){},async recognize(){const [text,confidence]=outputs.shift();return {data:{text,confidence}};}};
+ try{const r=await recognizeFields(worker,{width:360,height:780,getContext:()=>({getImageData:()=>({data:new Uint8ClampedArray(400).fill(255)})})},pokemon);assert.equal(r.cp,582);assert.equal(r.conflict,false);assert.equal(r.match.id,null);assert.equal(outputs.length,0);}finally{globalThis.document=previous;}
+});
+test('name foreground isolation omits a pale pencil and green HP line from the single-line crop',()=>{
+ const previous=globalThis.document,width=24,height=16,data=new Uint8ClampedArray(width*height*4).fill(255),draws=[];
+ for(let y=3;y<9;y++)for(let x=2;x<15;x++)data.set([105,135,135,255],(y*width+x)*4);
+ for(let y=2;y<12;y++)data.set([215,215,215,255],(y*width+21)*4);
+ for(let x=0;x<24;x++)data.set([100,215,165,255],(13*width+x)*4);
+ globalThis.document={createElement:()=>({getContext:()=>({putImageData(){},fillRect(){},drawImage(...args){draws.push(args);}})})};
+ try{const image=nameTextImage({getContext:()=>({getImageData:()=>({data})})},{x:0,y:0,width,height});assert.ok(image);assert.deepEqual(draws[0].slice(1,5),[2,3,13,6]);}finally{globalThis.document=previous;}
 });

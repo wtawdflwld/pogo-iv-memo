@@ -62,7 +62,7 @@ const valid=gm.pokemon.filter(p=>p.released && !p.speciesId.includes('_shadow') 
 const ids=new Set(valid.map(p=>p.speciesId));
 const pokemon=valid.map(p=>{
  const form=p.speciesName.match(/\((.+)\)/)?.[1]||'';
- return {id:p.speciesId,dex:p.dex,name:names.get(p.dex)||p.speciesName,english:p.speciesName,form:form.split(', ').map(f=>translations[f]||f).join('・'),stats:p.baseStats,
+ return {id:p.speciesId,dex:p.dex,name:names.get(p.dex)||p.speciesName,english:p.speciesName,form:form.split(', ').map(f=>translations[f]||f).join('・'),types:p.types.filter(t=>t!=='none'),stats:p.baseStats,
   evolutions:(p.family?.evolutions||[]).filter(id=>ids.has(id)).map(id=>({id,condition:condition[`${p.speciesId}>${id}`]||'アメとゲーム内の進化条件が必要。性別・相棒・時間帯・地域・イベントなどの制限はゲーム内の進化ボタンで確認してください。'}))};
 });
 // Audit evolution routes against the GO Game Master, rather than inheriting

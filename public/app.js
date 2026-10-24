@@ -33,7 +33,7 @@ function card(r,draft){
  let thumbnail='<div class="thumb blank" aria-hidden="true">?</div>';
  if(r.thumbnail){const url=URL.createObjectURL(r.thumbnail);thumbURLs.push(url);thumbnail=`<button class="image-button" data-action="edit" data-id="${r.id}" aria-label="${esc(display(byId.get(r.speciesId)))}の画像を確認" style="padding:0;border:0;background:none"><img class="thumb" src="${url}" alt="評価画面"></button>`;}
  const v=x=>x==null?'?':x;
- return `<article class="record" data-record="${r.id}"><div class="record-top">${thumbnail}<div class="record-heading"><h3>${esc(display(byId.get(r.speciesId)))} ${badge(r)}</h3><p class="iv-line">攻撃 ${v(r.atk)} / 防御 ${v(r.def)} / HP ${v(r.hp)} <span> · CP ${v(r.cp)}</span></p></div><div class="record-actions"><button class="text-button" data-action="edit" data-id="${r.id}">確認・修正</button><button class="icon-button" data-action="${draft?'discard':'delete'}" data-id="${r.id}" aria-label="${draft?'結果から除外':'個体を削除'}">×</button></div></div>${rankHTML(r)}<p class="source">${esc(r.source?.file||'手動入力')}${r.source?.time!=null?' · '+formatTime(r.source.time):''} · ${new Date(r.createdAt).toLocaleString('ja-JP')}</p></article>`;
+ return `<article class="record" data-record="${r.id}"><div class="record-top">${thumbnail}<div class="record-heading"><h3>${esc(display(byId.get(r.speciesId)))} ${badge(r)}</h3><p class="iv-line">攻撃 ${v(r.atk)} / 防御 ${v(r.def)} / HP ${v(r.hp)} <span> · CP ${v(r.cp)}</span></p></div><div class="record-actions"><button class="text-button" data-action="edit" data-id="${r.id}">確認・修正</button><button class="icon-button" data-action="${draft?'discard':'delete'}" data-id="${r.id}" aria-label="${draft?'結果から除外':'個体を削除'}">×</button></div></div>${r.formEvidence?'<p class="source">画像のタイプ表示から姿を判定</p>':''}${rankHTML(r)}<p class="source">${esc(r.source?.file||'手動入力')}${r.source?.time!=null?' · '+formatTime(r.source.time):''} · ${new Date(r.createdAt).toLocaleString('ja-JP')}</p></article>`;
 }
 function formatTime(s){return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;}
 function render(){
@@ -160,6 +160,7 @@ $('#close-editor').onclick=closeEditor;$('#editor').addEventListener('cancel',e=
 async function reflect(confirmed){
  $('#edit-error').textContent='';const r={...editing,speciesId:$('#species-select').value||null,gender:$('#edit-gender').value||null,noEvolve:$('#edit-no-evolve').checked};
  for(const k of ['atk','def','hp','cp']){const el=$('#edit-'+k);if(!el.validity.valid){$('#edit-error').textContent='IVは0〜15の整数、CPは10〜20,000の整数で入力してください。';return;}r[k]=el.value.trim()===''?null:Number(el.value);}
+ if(r.speciesId!==editing.speciesId)r.formEvidence=null;
  if(confirmed&&!complete(r)){$('#edit-error').textContent='種類・フォルムと、攻撃／防御／HPのIVをすべて入力してください。未認識の値は0で補いません。';return;}
  r.status=confirmed?'confirmed':'review';r.updatedAt=new Date().toISOString();r.dataVersion=db.version;
  const buttons=$('#edit-form').querySelectorAll('button');buttons.forEach(b=>b.disabled=true);

@@ -40,7 +40,7 @@ export async function analyzeCanvas(canvas,pokemon,source,onProgress,calibration
  if(conflict)notes.push('CPの複数回の読み取りが一致しないため、値を空欄にしました');
  if(ocrError)notes.push('OCRに失敗: '+ocrError);
  notes.push('自動読取は候補です。種類・フォルム・IVを確認して確定してください');
- return emptyRecord(source,{speciesId:match.id,atk:bars.ivs[0],def:bars.ivs[1],hp:bars.ivs[2],cp,thumbnail,ocrText:text,candidates:match.candidates,geometry:bars.geometry,confidence:{bars:bars.confidence,ocr:confidence},notes});
+ return emptyRecord(source,{speciesId:match.id,atk:bars.ivs[0],def:bars.ivs[1],hp:bars.ivs[2],cp,thumbnail,ocrText:text,candidates:match.candidates,formEvidence:match.evidence||null,geometry:bars.geometry,confidence:{bars:bars.confidence,ocr:confidence},notes});
 }
 function eventOnce(el,event,timeout=20000,trigger=null){return new Promise((resolve,reject)=>{
  const timer=setTimeout(()=>finish(Error(`${event}を待機中に時間切れ。動画形式・長さをご確認ください`)),timeout);
@@ -84,7 +84,7 @@ export async function importVideo(file,pokemon,{onProgress,onRecord,signal,inter
    if(Math.abs(video.currentTime-target)>.015)await eventOnce(video,'seeked',20000,()=>{video.currentTime=target;});
    if(estimated&&video.currentTime<target-.25)break;
    if(signal.aborted)break;
-   const canvas=canvasFrom(video),inspection=await inspectCanvas(canvas),scene=detector.push(inspection.hash),bars=inspection.bars;sampled++;
+   const canvas=canvasFrom(video),inspection=await inspectCanvas(canvas),scene=detector.push(inspection.hash,inspection.page),bars=inspection.bars;sampled++;
    if(detector.scene!==group){await flush();group=detector.scene;consensus=new BarConsensus();if(signal.aborted)break;}
    groupSamples++;
    onProgress({phase:'video',fraction:target/duration,time:target,duration,sampled,scenes,skipped});
