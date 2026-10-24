@@ -35,7 +35,7 @@ test('every bundled species/form has a valid nonempty public type list',()=>{
  for(const p of pokemon)assert.ok(p.types?.length>=1&&p.types.length<=2&&p.types.every(t=>allowed.has(t)),p.id);
 });
 test('OCR and image evidence resolve a form together without the broad fallback overriding dedicated CP',async()=>{
- const previous=globalThis.document,image=badges(),outputs=[['CP582',90],['CP582',90],['コラッタ',90],['CP58\nコラッタ',90]];
+ const previous=globalThis.document,image=badges(),outputs=[['CP582',90],['CP582',90],['コラッタ',90]];
  globalThis.document={createElement:()=>({getContext:()=>({fillRect(){},drawImage(){}})})};
  const worker={async setParameters(){},async recognize(){const [text,confidence]=outputs.shift();return {data:{text,confidence}};}};
  try{const r=await recognizeFields(worker,{width:image.width,height:image.height,getContext:()=>({getImageData:()=>image})},pokemon);assert.equal(r.cp,582);assert.equal(r.match.id,'rattata_alolan');assert.equal(r.match.evidence.typeCount,2);assert.equal(outputs.length,0);}finally{globalThis.document=previous;}

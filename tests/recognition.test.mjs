@@ -50,7 +50,7 @@ test('field OCR uses separate crops and whitelists and keeps conflicting CP blan
  }finally{globalThis.document=previous;}
 });
 test('a broad name/form fallback cannot erase a CP agreed by dedicated field reads',async()=>{
- const previous=globalThis.document,outputs=[['CP582',90],['CP582',90],['ライチュウ',90],['CP58\nライチュウ',90]];
+ const previous=globalThis.document,outputs=[['CP582',90],['CP582',90],['Unknown',90],['Unknown',90],['CP58\nライチュウ',90]];
  globalThis.document={createElement:()=>({getContext:()=>({fillRect(){},drawImage(){}})})};
  const worker={async setParameters(){},async recognize(){const [text,confidence]=outputs.shift();return {data:{text,confidence}};}};
  try{const r=await recognizeFields(worker,{width:360,height:780,getContext:()=>({getImageData:()=>({data:new Uint8ClampedArray(400).fill(255)})})},pokemon);assert.equal(r.cp,582);assert.equal(r.conflict,false);assert.equal(r.match.id,null);assert.equal(outputs.length,0);}finally{globalThis.document=previous;}

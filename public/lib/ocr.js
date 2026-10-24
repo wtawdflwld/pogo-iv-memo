@@ -88,14 +88,14 @@ export async function recognizeFields(worker,canvas,pokemon){
   else match={...match,candidates:[...new Set([...match.candidates,...alternative.candidates])].slice(0,8)};
  }
  // Keep the broad sparse-text pass only as a fallback for different layouts.
- if(!match.id||agreeCP(cpReadings).cp==null){
+ if(!match.exact||agreeCP(cpReadings).cp==null){
   const fallback=await read('配置違いの補助読取',rects.top,false);
   // This pass is also used for ambiguous names/forms. Its unrelated digits
   // must never invalidate an already agreed dedicated CP-field reading.
   if(agreeCP(cpReadings).cp==null)cpReadings.push(fallback);
   const alternative=matchSpecies(fallback.text,pokemon);
   if(match.id&&alternative.id&&match.id!==alternative.id){match={id:null,candidates:[match.id,alternative.id],reason:'名前の読み取りが一致しません。種類を確認してください'};}
-  else if(!match.id&&alternative.id){match=alternative;confidence=fallback.confidence;}
+  else if(!match.id&&!match.exact&&alternative.id){match=alternative;confidence=fallback.confidence;}
   else if(!match.id&&!match.exact&&alternative.exact){match=alternative;confidence=fallback.confidence;}
   else if(!match.id)match={...match,candidates:[...new Set([...match.candidates,...alternative.candidates])].slice(0,8)};
  }
