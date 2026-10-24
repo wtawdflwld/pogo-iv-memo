@@ -2,7 +2,7 @@
 // Pure ImageData helpers are also exercised by the synthetic-fixture tests.
 function pixel(data,w,x,y){const i=(Math.round(y)*w+Math.round(x))*4;return [data[i],data[i+1],data[i+2]];}
 function fill([r,g,b]){return (r>160&&g>65&&g<205&&b<175&&r-g>25&&g-b>8)||(r>175&&g>70&&g<185&&b>65&&b<190&&r-g>40&&Math.abs(g-b)<48);}
-function track([r,g,b]){return fill([r,g,b]) || (r>175&&r<247&&g>160&&b>150&&r>=g&&g>=b-4&&r-b<65);}
+function track([r,g,b]){return fill([r,g,b]) || (Math.min(r,g,b)>155&&Math.max(r,g,b)<247&&Math.max(r,g,b)-Math.min(r,g,b)<45);}
 function runAt(data,w,y) {
  const runs=[];let start=-1,holes=0;
  for(let x=Math.floor(w*.045);x<w*.8;x++){
