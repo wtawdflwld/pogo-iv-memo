@@ -7,7 +7,7 @@ export function captureSupport(env=globalThis){
 }
 export function recorderOptions(Recorder){
  const type=['video/mp4','video/webm;codecs=vp8','video/webm'].find(t=>Recorder.isTypeSupported?.(t));
- return {...(type?{mimeType:type}:{}),videoBitsPerSecond:3000000};
+ return {...(type?{mimeType:type}:{}),videoBitsPerSecond:6000000};
 }
 export function captureError(error){
  const messages={NotAllowedError:'画面共有が許可されませんでした。共有先とブラウザーの設定を確認し、ボタンからもう一度開始してください。',InvalidStateError:'画面を前面に表示し、ライブキャプチャボタンを押して開始してください。',NotFoundError:'共有できる画面が見つかりません。Safariで開いてください。',NotReadableError:'画面共有を開始できませんでした。他の録画・共有が動作していないか確認してください。',NotSupportedError:'この環境では画面共有または録画を開始できません。Safariで開いてください。',QuotaExceededError:'端末の空き容量が不足し、共有映像を記録できませんでした。'};

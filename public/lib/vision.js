@@ -13,19 +13,23 @@ function runAt(data,w,y) {
 }
 export function readBar(image,x,y,width) {
  const {data,width:w,height:h}=image;if(y<2||y>h-3||x<0||x+width>=w||width<20)return {value:null,confidence:0};
- let hit=0,last=-1,coverage=0;
+ let coverage=0;
  const flags=[];
  for(let i=0;i<width;i++) {
    let f=0,t=0;for(let dy=-2;dy<=2;dy++){const p=pixel(data,w,x+i,y+dy);if(fill(p))f++;if(track(p))t++;}
-   flags.push(f>=3);if(f>=3){hit++;last=i;}if(t>=3)coverage++;
+   flags.push(f>=3);if(t>=3)coverage++;
  }
  if(coverage/width<.72)return {value:null,confidence:0};
- const fraction=last<0?0:(last+1)/width;
- const value=Math.round(fraction*15), distance=Math.abs(fraction-value/15);
- // Avoid interpreting disconnected artwork or a partial transition as a bar.
- const solid=last<0?1:hit/(last+1);
- if(distance>.025 || solid<.77)return {value:null,confidence:.25};
- return {value,confidence:Math.min(.98,.8+(1-distance/.025)*.18)};
+ // Vote inside each IV cell, away from rounded ends and 5/10 separators.
+ // A single orange compression pixel at the far end must not raise the IV.
+ const cells=Array.from({length:15},(_,i)=>{
+  const from=Math.ceil((i+.18)*width/15),to=Math.floor((i+.82)*width/15);let hits=0,total=0;
+  for(let x=from;x<=to;x++){hits+=flags[x]?1:0;total++;}return hits/Math.max(1,total);
+ });
+ if(cells.some(v=>v>.25&&v<.75))return {value:null,confidence:.25};
+ let value=0;while(value<15&&cells[value]>=.75)value++;
+ if(cells.slice(value).some(v=>v>=.75))return {value:null,confidence:.25};
+ return {value,confidence:Math.min(.98,.8+Math.min(...cells.map(v=>Math.abs(v-.5)*2))*.18)};
 }
 export function detectBars(image,calibration=null) {
  const {data,width:w,height:h}=image;
@@ -50,23 +54,43 @@ export function detectBars(image,calibration=null) {
 }
 export function fingerprint(image) {
  const {data,width:w,height:h}=image,out=[];
- // Ignore bottom dialogue/leader animation. Keep CP, name, Pokemon and bars.
- for(let yy=0;yy<24;yy++)for(let xx=0;xx<16;xx++){
-  const x=Math.min(w-1,Math.floor((.08+xx/16*.75)*w)), y=Math.min(h-1,Math.floor((.07+yy/24*.72)*h));
-  const [r,g,b]=pixel(data,w,x,y);out.push(Math.round((r+g+b)/3/8));
- }return out;
+ // Watch text/card regions; the animated model in the upper middle and the
+ // team leader at the bottom must not restart the stability wait every frame.
+ for(const [top,bottom,rows] of [[.055,.15,6],[.38,.57,10],[.6,.79,8]])
+  for(let yy=0;yy<rows;yy++)for(let xx=0;xx<16;xx++){
+   const x=Math.min(w-1,Math.floor((.08+xx/16*.75)*w)),y=Math.min(h-1,Math.floor((top+yy/rows*(bottom-top))*h));
+   const [r,g,b]=pixel(data,w,x,y);out.push(Math.round((r+g+b)/3/8));
+  }return out;
 }
 export function frameDistance(a,b){if(!a||!b)return Infinity;return a.reduce((sum,v,i)=>sum+Math.abs(v-b[i]),0)/a.length;}
-export function parseCP(text){const m=text.normalize('NFKC').replace(/[ＯO]/g,'0').match(/c\s*p\s*[:：.・]?\s*(\d{2,5})/i);return m&&+m[1]>=10&&+m[1]<=20000?+m[1]:null;}
+export function parseCP(text){
+ const values=[...text.normalize('NFKC').matchAll(/c\s*p\s*[:.・]?\s*([0-9OIlSB]+(?:[ ,]+[0-9]+)*)(?![A-Za-z0-9])/gi)].map(m=>m[1].replace(/[ ,]/g,'').replace(/O/gi,'0').replace(/[Il]/g,'1').replace(/S/gi,'5').replace(/B/gi,'8')).filter(s=>/^\d{2,5}$/.test(s)).map(Number).filter(v=>v>=10&&v<=20000);
+ const unique=[...new Set(values)];return unique.length===1?unique[0]:null;
+}
 const normalize=s=>s.normalize('NFKC').replace(/[\s\p{P}\p{S}]/gu,'').toLowerCase();
 export function matchSpecies(text,pokemon) {
  const lines=text.split(/\n/).map(normalize).filter(Boolean);
  const matches=pokemon.filter(p=>lines.some(l=>l===normalize(p.name)||l===normalize(p.english)));
  const dex=new Set(matches.map(p=>p.dex));
- if(dex.size!==1)return {id:null,candidates:matches.map(p=>p.id),reason:'種類を特定できません（ニックネームを含む）'};
+ if(dex.size!==1){
+  // Similar spelling is a review suggestion, never an automatic species ID.
+  const suggestions=matches.length?matches:pokemon.filter(p=>lines.some(l=>{
+   const n=normalize(p.name);return l.length>=4&&Math.abs(l.length-n.length)<=1&&editDistance(l,n)<=1;
+  })).slice(0,8);
+  return {id:null,candidates:suggestions.map(p=>p.id),reason:suggestions.length?'読み取りに近い名前候補あり。種類・フォルムを選んで確認してください':'種類を特定できません（ニックネームを含む）'};
+ }
  const forms=pokemon.filter(p=>p.dex===matches[0].dex);
  if(forms.length!==1)return {id:null,candidates:forms.map(p=>p.id),reason:'種類候補あり・フォルムを確認してください'};
  return {id:matches[0].id,candidates:[matches[0].id],reason:''};
+}
+function editDistance(a,b){let row=Array.from({length:b.length+1},(_,i)=>i);for(let i=0;i<a.length;i++){const next=[i+1];for(let j=0;j<b.length;j++)next.push(Math.min(next[j]+1,row[j+1]+1,row[j]+(a[i]===b[j]?0:1)));row=next;}return row[b.length];}
+export class BarConsensus{
+ constructor(){this.previous=null;this.count=0;}
+ push(bars){
+  const p=this.previous,g=bars.geometry,valid=!!g&&bars.ivs.every(v=>Number.isInteger(v))&&bars.confidence>=.8;
+  const same=valid&&p&&JSON.stringify(p.ivs)===JSON.stringify(bars.ivs)&&Math.abs(p.geometry.x-g.x)<.015&&Math.abs(p.geometry.width-g.width)<.015&&g.ys.every((y,i)=>Math.abs(y-p.geometry.ys[i])<.015);
+  this.count=valid?(same?this.count+1:1):0;this.previous=valid?bars:null;return this.count>=3;
+ }
 }
 export class StableScenes {
  constructor(){this.previous=null;this.stableCount=0;this.emitted=false;this.scene=0;this.buffer=null;this.changing=0;}

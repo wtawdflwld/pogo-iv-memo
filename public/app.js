@@ -61,7 +61,7 @@ async function importFiles(files,kind,options={}){
    try{
     if(kind==='video'||kind==='capture'){
      const s=await importVideo(file,db.pokemon,{onProgress:progress,signal:cancelController.signal,source:options.source,durationHint:options.meta?.elapsed,onRecord:async r=>{if(options.meta?.interruptions?.length)r.notes.push('共有中に映像の一時停止・再開を検知しました。取りこぼしがないか確認してください');drafts.push(r);count++;render();}});
-     summaries.push(`${file.name}: ${s.scenes}件・バー未検出${s.skipped}場面`);
+     summaries.push(`${file.name}: ${s.scenes}件・安定したバー未確認${s.skipped}場面 / ${s.sampled}フレーム・映像${s.duration.toFixed(1)}秒`);
      if(s.durationEstimated)summaries.push('記録に長さの情報がないため共有時間を上限に解析しました。取りこぼしがないか確認してください');
      if(options.meta?.elapsed>=10&&s.duration<options.meta.elapsed*.5)summaries.push('共有時間に比べて記録が短いため、アプリ切り替え中に映像が止まった可能性があります');
     }else{
@@ -127,6 +127,7 @@ $('#save-all').addEventListener('click',async()=>{
 });
 document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b||saving||b.disabled)return;const id=b.dataset.id;
  if(b.dataset.action==='edit')openEditor(id);
+ if(b.dataset.action==='species-candidate'&&editing)options('',id);
  if(b.dataset.action==='discard'){drafts=drafts.filter(r=>r.id!==id);render();}
  if(b.dataset.action==='delete'){deleteTarget=id;$('#delete-dialog').showModal();}
  if(b.dataset.action==='capture-analyze'&&!busy&&!capturing)analyzeCapture(id);
@@ -145,6 +146,7 @@ function options(query='',selected=''){
 function openEditor(id){
  const record=drafts.find(r=>r.id===id)||stored.find(r=>r.id===id);if(!record)return;
  editing={...record};calibrationPoints=null;$('#edit-error').textContent='';$('#species-query').value='';options('',record.speciesId||'');
+ $('#species-candidates').innerHTML=record.speciesId?'':(record.candidates||[]).filter(id=>byId.has(id)).map(id=>`<button type="button" class="button secondary" data-action="species-candidate" data-id="${esc(id)}">候補：${esc(display(byId.get(id)))}</button>`).join('');
  for(const k of ['atk','def','hp','cp'])$('#edit-'+k).value=record[k]??'';
  $('#edit-gender').value=record.gender||'';$('#edit-no-evolve').checked=!!record.noEvolve;
  $('#edit-notes').textContent=(record.notes||[]).join('\n');$('#ocr-text').textContent=record.ocrText||'文字認識の結果はありません';
