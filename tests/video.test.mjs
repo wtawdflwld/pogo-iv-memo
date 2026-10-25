@@ -35,7 +35,7 @@ test('a missing representative-frame CP is recovered only after two separated fr
  scenario='cp-recover';ocrCalls=[];const rows=[];
  await importVideo(file,species,{signal:new AbortController().signal,onProgress(){},onRecord:async r=>rows.push(r)});
  const r=rows[0];assert.equal(r.cp,599);assert.equal(r.cpEvidence.method,'scene-consensus');assert.equal(r.cpEvidence.times.length,2);
- assert.ok(r.cpEvidence.times[1]-r.cpEvidence.times[0]>=.4);assert.equal(r.status,'review');assert.equal(r.readerVersion,'1.2.4');
+ assert.ok(r.cpEvidence.times[1]-r.cpEvidence.times[0]>=.4);assert.equal(r.status,'review');assert.equal(r.readerVersion,'1.2.5');
  assert.ok(r.ocrText.includes('CP フレーム間一致'));assert.ok(!r.notes.includes('現在CPを読めません'));
  const retries=ocrCalls.filter(c=>c.time<6.4);assert.equal(retries.length,4);assert.ok(retries.every(c=>c.whitelist),'Retries read only CP, not name/model/HP');
 });

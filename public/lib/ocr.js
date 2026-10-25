@@ -1,5 +1,5 @@
 import {parseCP,matchSpecies} from './vision.js';
-import {detectTypeBadges,parseTypes,resolveForm} from './forms.js';
+import {detectTypeBadges,detectBadgeTypes,parseTypes,resolveForm} from './forms.js';
 import {detectGenderSymbol,resolveNidoran} from './gender.js';
 
 export function fieldRects(width,height){return {
@@ -188,13 +188,15 @@ export async function recognizeFields(worker,canvas,pokemon){
   match=resolveNidoran(match,pokemon,symbol.gender,nameTexts);trace.push(`[ニドラン性別判定]\n画面記号 ${symbol.gender||'不明'} / 種類 ${match.id||'未確定'}`);
  }
  if(!match.id&&match.exact&&match.candidates.every(id=>pokemon.find(p=>p.id===id)?.types?.length)){
-  const badges=detectTypeBadges(canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height));
+  const image=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height),badges=detectTypeBadges(image);
   let evidence={count:badges.count,types:[]},resolved=resolveForm(match,pokemon,evidence);
   if(!resolved.id){
    const rect={x:Math.round(canvas.width*.36),y:Math.round(canvas.height*.555),width:Math.round(canvas.width*.28),height:Math.round(canvas.height*.035)},labels=[];
    for(const enhance of [false,true])labels.push(await read(enhance?'タイプ表示 補正':'タイプ表示',rect,enhance));
    const valid=labels.filter(r=>r.confidence>=45&&parseTypes(r.text).length),common=valid.length>1?parseTypes(valid[0].text).filter(t=>parseTypes(valid[1].text).includes(t)):valid[0]?.confidence>=75?parseTypes(valid[0].text):[];
-   evidence={count:badges.count,types:common};resolved=resolveForm(match,pokemon,evidence);
+   const iconTypes=detectBadgeTypes(image,badges);
+   evidence={count:badges.count,types:[...new Set([...common,...iconTypes])]};resolved=resolveForm(match,pokemon,evidence);
+   trace.push(`[タイプ図形の補助判定]\n${iconTypes.includes('water')?'青い円の中に水滴形を確認（みず）':'形と色を確認できません'}`);
   }
   match=resolved;trace.push(`[姿の画像判定]\nタイプアイコン ${badges.count??'不明'}個 / タイプ ${evidence.types.join(',')||'未読取'} / ${match.visual?match.id:'一意に判定できません'}`);
  }

@@ -25,6 +25,37 @@ export function detectTypeBadges(image){
  }
  return {count:null,badges:badges.slice(0,2)};
 }
+// Positive evidence for the water drop only. Color alone cannot identify a
+// type: a blue circle must also contain a centered, downward-widening drop.
+// Work on a normalized grid; never retain source pixels or match templates.
+export function detectBadgeTypes(image,observation){
+ const {width:w,height:h,data}=image;if(!w||!h||data.length!==w*h*4||![1,2].includes(observation?.count))return [];
+ const rgb=(x,y)=>{x=Math.round(x);y=Math.round(y);if(x<0||y<0||x>=w||y>=h)return null;const i=(y*w+x)*4;return [data[i],data[i+1],data[i+2]];};
+ for(const badge of observation.badges||[]){
+  const cx=badge.x*w,cy=badge.y*h,r=badge.radius*w;
+  if(!Number.isFinite(cx+cy+r)||r<5)continue;
+  const ring=Array.from({length:36},(_,a)=>rgb(cx+Math.cos(a*Math.PI/18)*r*.77,cy+Math.sin(a*Math.PI/18)*r*.77));if(ring.some(p=>!p))continue;
+  const bg=[0,1,2].map(c=>ring.map(p=>p[c]).sort((a,b)=>a-b)[18]);
+  if(bg[2]-bg[0]<12||bg[2]-bg[1]<15)continue;
+  const size=21,mask=new Uint8Array(size*size),seen=new Uint8Array(mask.length),parts=[];
+  for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+   const nx=(x-10)*.07,ny=(y-10)*.07;if(Math.hypot(nx,ny)>.7)continue;const p=rgb(cx+nx*r,cy+ny*r);
+   if(p&&p[0]>bg[0]+20&&p[1]>bg[1]+12&&p.reduce((s,v)=>s+v,0)>bg.reduce((s,v)=>s+v,0)+45)mask[y*size+x]=1;
+  }
+  for(let i=0;i<mask.length;i++)if(mask[i]&&!seen[i]){
+   const part=[i];seen[i]=1;for(let k=0;k<part.length;k++){const p=part[k],x=p%size,y=Math.floor(p/size);
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const xx=x+dx,yy=y+dy,n=yy*size+xx;if(xx>=0&&xx<size&&yy>=0&&yy<size&&mask[n]&&!seen[n]){seen[n]=1;part.push(n);}}
+   }parts.push(part);
+  }
+  const part=parts.sort((a,b)=>b.length-a.length)[0];if(!part||part.length<35||part.length>200)continue;
+  const xs=part.map(p=>p%size),ys=part.map(p=>Math.floor(p/size)),left=Math.min(...xs),right=Math.max(...xs),top=Math.min(...ys),bottom=Math.max(...ys),width=right-left+1,height=bottom-top+1;
+  if(height<9||height>19||width<5||width>15||height<width||Math.abs((left+right)/2-10)>3||top>7||bottom<13||part.length/(width*height)<.45)continue;
+  const rows=Array.from({length:height},(_,i)=>xs.filter((_,j)=>ys[j]===top+i).length),third=Math.max(2,Math.floor(height/3));
+  const upper=rows.slice(0,third).reduce((s,n)=>s+n,0)/third,middle=rows.slice(third,third*2).reduce((s,n)=>s+n,0)/third,lower=rows.slice(-third).reduce((s,n)=>s+n,0)/third;
+  if(upper<middle*.75&&upper<lower*.8&&xs.reduce((s,x)=>s+x,0)/part.length>=8&&xs.reduce((s,x)=>s+x,0)/part.length<=12)return ['water'];
+ }
+ return [];
+}
 const typeNames={normal:'ノーマル',fire:'ほのお',water:'みず',electric:'でんき',grass:'くさ',ice:'こおり',fighting:'かくとう',poison:'どく',ground:'じめん',flying:'ひこう',psychic:'エスパー',bug:'むし',rock:'いわ',ghost:'ゴースト',dragon:'ドラゴン',dark:'あく',steel:'はがね',fairy:'フェアリー'};
 const normalize=s=>s.normalize('NFKC').toLowerCase().replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
 export function parseTypes(text){const tokens=text.split(/[\s/／・、|]+/).map(normalize);return Object.entries(typeNames).filter(([id,name])=>tokens.includes(id)||tokens.includes(normalize(name))).map(([id])=>id);}

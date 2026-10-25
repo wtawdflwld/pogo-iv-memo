@@ -41,7 +41,7 @@ git push -u origin main
 
 1. GitHubのリポジトリで **Settings → Pages → Build and deployment → Source → GitHub Actions** を選びます。
 2. **Actions → Deploy IV memo to GitHub Pages → Run workflow** を実行します。以後は `main` へのpushでも自動実行します。
-3. ワークフローは89件の基本テスト、構文確認を含む静的ビルド、Pagesへの配信を行います。
+3. ワークフローは92件の基本テスト、構文確認を含む静的ビルド、Pagesへの配信を行います。
 4. 完了したdeployジョブのURL（通常は `https://YOUR_ACCOUNT.github.io/YOUR_REPOSITORY/`）を開きます。
 
 `public/` 配下のOCR本体・WASM・言語モデル・種族データ・ライセンスも必ずpushします。CIでは外部データの再取得を行わず、同梱した内容をビルドします。URLやリポジトリ名をソースへ埋め込む設定は不要です。asset、Worker、manifest、Service Workerは相対URLで動きます。
@@ -67,6 +67,12 @@ git push
 5. ライブキャプチャを使える状態にした後で、機内モードで起動・共有・解析・保存できるか確認します。iCloud内だけにあるメディアは、先に端末へダウンロードしてください。
 
 通常起動時の更新確認はオンラインなら実行されますが、解析のためのCDN・外部画像認識API・バックエンド通信はありません。画像・動画・個体の外部送信処理は実装していません。
+
+## v1.2.5：ヤドランの姿判定・シャドウの説明
+
+- 通常／ガラルのヤドランはどちらもタイプが2個で、タイプ数だけでは区別できません。文字を読めない場合に、青いタイプアイコン内の水滴の形を確認し、「みず」を含む姿を絞る補助判定を追加しました。色だけ・円だけ・不鮮明・名前が曖昧・他の証拠と衝突する場合は未確定を維持します。全タイプ・全本体画像の分類機能ではありません。
+- シャドウの自動識別・保存欄はありません。CP・HP・IVと、このアプリの同種内のステータス積によるIV順位は通常個体と共通です。戦闘の与ダメージ・被ダメージがともに20%増える違いは[公式解説](https://www.pokemon.com/uk/features/shadow-pokemon-in-pokemon-go-tm-away-frustration-plus-tips-on-training-and-purifying)を参照。技・対戦相手・勝率を含む実戦評価は計算せず、その制限をアプリの使い方にも表示しました。
+- リトレーン後の個体値変化の予測は行いません。リトレーン後の評価画面を読み取り直してください。IV判定・順位の計算式と既存の保存方式は変更していません。
 
 ## v1.2.4：CPの競合判定・名前・単タイプの姿判定
 
@@ -256,7 +262,7 @@ public/                 配信元ソース
   vendor/               OCR本体・Worker・WASM・日本語英語モデル
   licenses/             ライセンス原文
 scripts/                ビルド・開発サーバー・資材取得・任意OCR確認
-tests/                  89件の基本テスト
+tests/                  92件の基本テスト
 .github/workflows/      GitHub Pages自動配信
 docs/VERIFICATION.md    完了範囲と未検証事項
 dist/                   ビルド済み配信物（Git管理せずCIで生成）

@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
-import {detectTypeBadges,parseTypes,resolveForm} from '../public/lib/forms.js';import {matchSpecies} from '../public/lib/vision.js';
+import {detectTypeBadges,detectBadgeTypes,parseTypes,resolveForm} from '../public/lib/forms.js';import {matchSpecies} from '../public/lib/vision.js';
 import {recognizeFields} from '../public/lib/ocr.js';
 const pokemon=JSON.parse(readFileSync(new URL('../public/data/pokemon.json',import.meta.url),'utf8')).pokemon;
 function badges(count=2,scale=1,offset=0){
@@ -8,6 +8,32 @@ function badges(count=2,scale=1,offset=0){
   const d=Math.hypot(xx-x*scale,yy-421*scale);if(d<=11*scale)data.set(d<3*scale?[240,230,230,255]:[120,90,104,255],(yy*width+xx)*4);
  }return {width,height,data};
 }
+function waterBadge(scale=1,shape='drop',blue=true){
+ const image=badges(2,scale),{width:w,height:h,data}=image,cx=160*scale,cy=421*scale,r=11*scale;
+ for(let y=Math.floor(cy-r);y<=cy+r;y++)for(let x=Math.floor(cx-r);x<=cx+r;x++){
+  const dx=(x-cx)/r,dy=(y-cy)/r;if(Math.hypot(dx,dy)>1)continue;
+  const drop=dy>=-.55&&dy<=.48&&Math.abs(dx)<(dy<.12?(dy+.55)*.56:.375*Math.sqrt(Math.max(0,1-((dy-.12)/.36)**2)));
+  const ink=shape==='drop'?drop:shape==='circle'?Math.hypot(dx,dy)<.45:shape==='rectangle'?Math.abs(dx)<.3&&Math.abs(dy)<.5:shape==='inverted'?dy>-.5&&dy<.5&&Math.abs(dx)<(.5-dy)*.65:false;
+  data.set(ink?[235,225,230,255]:blue?[65,100,185,255]:[175,80,150,255],(y*w+x)*4);
+ }return image;
+}
+test('a complete blue disc with a centered water drop identifies water at two resolutions',()=>{
+ for(const scale of [1,3]){const image=waterBadge(scale),observation=detectTypeBadges(image);assert.equal(observation.count,2);assert.deepEqual(detectBadgeTypes(image,observation),['water']);assert.equal(resolveForm(matchSpecies('ヤドラン',pokemon),pokemon,{count:2,types:['water']}).id,'slowbro');}
+});
+test('color alone, circles, bars, inverted shapes and missing geometry are not water evidence',()=>{
+ for(const shape of ['none','circle','rectangle','inverted']){const image=waterBadge(2,shape);assert.deepEqual(detectBadgeTypes(image,detectTypeBadges(image)),[],shape);}
+ const purple=waterBadge(2,'drop',false);assert.deepEqual(detectBadgeTypes(purple,detectTypeBadges(purple)),[]);
+ const image=waterBadge();assert.deepEqual(detectBadgeTypes(image,{count:null,badges:[]}),[]);assert.deepEqual(detectBadgeTypes({...image,data:[]},detectTypeBadges(image)),[]);
+ const match=matchSpecies('ヤドラン',pokemon);assert.equal(resolveForm(match,pokemon,{count:2,types:['water','poison']}).id,null);assert.equal(resolveForm({...match,exact:false},pokemon,{count:2,types:['water']}).id,null);
+});
+test('the real field reader combines water-drop evidence and refuses a contradictory type label',async()=>{
+ const previous=globalThis.document,image=waterBadge(3);
+ globalThis.document={createElement:()=>({getContext:()=>({fillRect(){},drawImage(){}})})};
+ try{for(const label of ['', 'どく']){
+  const outputs=[['CP582',90],['CP582',90],['ヤドラン',90],[label,90],[label,90]],worker={async setParameters(){},async recognize(){const [text,confidence]=outputs.shift();return {data:{text,confidence}};}};
+  const r=await recognizeFields(worker,{width:image.width,height:image.height,getContext:()=>({getImageData:()=>image})},pokemon);assert.equal(r.match.id,label?null:'slowbro');if(!label)assert.deepEqual(r.match.evidence.types,['water']);assert.equal(r.cp,582);assert.match(r.text,/水滴形/);assert.equal(outputs.length,0);
+ }}finally{globalThis.document=previous;}
+});
 test('complete pairs and centered single badges with clear flanks are detected; off-center remnants stay unknown',()=>{
  for(const scale of [1,2])assert.equal(detectTypeBadges(badges(2,scale)).count,2);
  for(const scale of [1,2])assert.equal(detectTypeBadges(badges(1,scale)).count,1);
