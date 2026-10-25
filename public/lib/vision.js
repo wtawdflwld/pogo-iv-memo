@@ -43,6 +43,9 @@ export function detectBars(image,calibration=null) {
  const candidates=bands.filter(b=>b.bottom-b.top>=2&&b.bottom-b.top<h*.025).map(b=>({...b,y:(b.top+b.bottom)/2}));
  let best=null;
  for(const a of candidates)for(const b of candidates)for(const c of candidates){
+  // The appraisal panel is below the name/type/weight card. Its horizontal
+  // rules and red background must never become an early 0/15/15 group.
+  if(a.y<h*.60)continue;
   const gap=b.y-a.y;if(gap<h*.023||gap>h*.09||Math.abs(c.y-b.y-gap)>h*.01)continue;
   if(Math.max(Math.abs(a.x-b.x),Math.abs(a.x-c.x),Math.abs(a.width-b.width),Math.abs(a.width-c.width))>w*.025)continue;
   const width=(a.width+b.width+c.width)/3,x=(a.x+b.x+c.x)/3;
@@ -97,6 +100,10 @@ export function matchSpecies(text,pokemon) {
   return {id:null,candidates:suggestions.map(p=>p.id),reason:suggestions.length?'読み取りに近い名前候補あり。種類・フォルムを選んで確認してください':'種類を特定できません（ニックネームを含む）'};
  }
  const forms=pokemon.filter(p=>p.dex===matches[0].dex);
+ // Pikachu entries here differ only in costume/moves, not the stats or type
+ // used for IV ranking. Preserve regional and mechanical forms elsewhere.
+ const pikachu=forms.find(p=>p.id==='pikachu');
+ if(forms.length>1&&pikachu&&forms.every(p=>p.dex===25&&['atk','def','hp'].every(k=>p.stats?.[k]===pikachu.stats[k])&&p.types?.length===pikachu.types.length&&p.types.every(t=>pikachu.types.includes(t))))return {id:pikachu.id,candidates:[pikachu.id],exact:true,cosmeticMerged:true,reason:'衣装違いはピカチュウにまとめています。進化できない衣装を含むため現在の姿のみ評価します。進化可能なら確認画面でチェックを解除してください'};
  if(forms.length!==1)return {id:null,candidates:forms.map(p=>p.id),exact:true,reason:'種類候補あり・フォルムを確認してください'};
  return {id:matches[0].id,candidates:[matches[0].id],exact:true,reason:''};
 }

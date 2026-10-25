@@ -1,6 +1,7 @@
 import {parseCP,matchSpecies} from './vision.js';
 import {detectTypeBadges,detectBadgeTypes,parseTypes,resolveForm} from './forms.js';
 import {detectGenderSymbol,resolveNidoran} from './gender.js';
+import {resolveSemiVoicedName} from './kana.js';
 
 export function fieldRects(width,height){return {
  cp:{x:Math.round(width*.18),y:Math.round(height*.035),width:Math.round(width*.64),height:Math.round(height*.2)},
@@ -83,6 +84,13 @@ export function decideCP(readings){
   const values=new Set(localized.map(r=>Number(r.text)));
   return {cp:values.size===1?Number(localized[0].text):null,conflict:values.size>1,method:'localized'};
  }
+ // A failed normalized outline (empty, one digit, or the wrong glyph count)
+ // is not a competing CP. Require the valid binary crop and both raw-line
+ // segmentations to agree strongly before resolving a broad-crop conflict.
+ if(localized.length===1&&localized[0].family==='mask'&&localized[0].confidence>=75){
+  const lines=readings.filter(r=>['line7','line13'].includes(r.local)&&r.digits&&r.expectedDigits===localized[0].count&&r.confidence>=75);
+  if(lines.length===2&&new Set(lines.map(r=>r.local)).size===2&&lines.every(r=>r.text.normalize('NFKC').trim()===localized[0].text))return {cp:Number(localized[0].text),conflict:false,method:'localized-line'};
+ }
  return agreeCP(readings);
 }
 function textReader(worker,canvas,trace){
@@ -123,7 +131,7 @@ async function readCPFields(read,canvas,trace,frameHeight=canvas.height){
     // Exclude the localization padding: it can include the trailing stroke
     // of the smaller P, which a raw-line reader would mistake for another 1.
     const tight={...region,x:region.x+3,width:region.width-6};
-    for(const psm of ['7','13'])cpReadings.push(await numeric(`CP 数字輪郭1行 ${psm}`,tight,true,'0123456789',psm));
+    for(const psm of ['7','13'])cpReadings.push({...await numeric(`CP 数字輪郭1行 ${psm}`,tight,true,'0123456789',psm),local:'line'+psm});
     if(agreeCP(cpReadings).cp==null){
      // Device-resolution glyphs were being magnified to roughly 200px high.
      // Retry a bounded height while keeping the confidence rules unchanged.
@@ -147,33 +155,33 @@ export async function recognizeCP(worker,canvas,frameHeight=canvas.height){
  const trace=[],read=textReader(worker,canvas,trace),readings=await readCPFields(read,canvas,trace,frameHeight);
  const result=decideCP(readings);trace.push(cpDecision(result));return {...result,text:trace.join('\n')};
 }
-function cpDecision({cp,conflict,method}){return `[CP 最終判定]\n${cp!=null?'採用 '+cp+(method==='localized'?'（位置・桁数確認済みの数字領域で白黒と輪郭が一致）':''):conflict?'有効な読取同士が不一致。空欄を維持':'信頼度・桁数を満たす読取が不足。空欄を維持'}`;}
+function cpDecision({cp,conflict,method}){return `[CP 最終判定]\n${cp!=null?'採用 '+cp+(method==='localized'?'（位置・桁数確認済みの数字領域で白黒と輪郭が一致）':method==='localized-line'?'（位置・桁数確認済みの白黒画像と数字1行の2設定が一致）':''):conflict?'有効な読取同士が不一致。空欄を維持':'信頼度・桁数を満たす読取が不足。空欄を維持'}`;}
 // Each field has its own segmentation and alphabet. Never OCR the model and
 // dialogue as one uniform paragraph, or reinterpret HP digits as CP.
 export async function recognizeFields(worker,canvas,pokemon){
  const rects=fieldRects(canvas.width,canvas.height),trace=[],read=textReader(worker,canvas,trace),cpReadings=await readCPFields(read,canvas,trace);
- const name=await read('名前',rects.name,true),nameTexts=[name.text];let match=matchSpecies(name.text,pokemon),confidence=name.confidence;
+ const name=await read('名前',rects.name,true),nameTexts=[name.text],nameReadings=[name];let match=matchSpecies(name.text,pokemon),confidence=name.confidence;
  if(!match.exact){
   const retry=await read('名前 文字のみ',rects.name,false,'','7',null,nameTextImage(canvas,rects.name)),alternative=matchSpecies(retry.text,pokemon);
-  nameTexts.push(retry.text);
+  nameTexts.push(retry.text);nameReadings.push(retry);
   if(alternative.exact){match=alternative;confidence=retry.confidence;}
   else match={...match,candidates:[...new Set([...match.candidates,...alternative.candidates])].slice(0,8)};
  }
  const candidateDex=new Set(pokemon.filter(p=>match.candidates.includes(p.id)).map(p=>p.dex));
- if(!match.exact&&candidateDex.size===1){
+ if(!match.exact&&!match.candidates.some(id=>id==='nidoran_female'||id==='nidoran_male')&&(candidateDex.size===1||nameTexts.some(text=>/[ァ-ヶー]{2}/.test(text)))){
   for(const [height,psm] of [[32,'7'],[40,'13']]){
-   const retry=await read(`名前 輪郭保持 ${height}`,rects.name,false,'',psm,null,nameTextImage(canvas,rects.name,{targetHeight:height,soft:true})),alternative=matchSpecies(retry.text,pokemon);nameTexts.push(retry.text);
+   const retry=await read(`名前 輪郭保持 ${height}`,rects.name,false,'',psm,null,nameTextImage(canvas,rects.name,{targetHeight:height,soft:true})),alternative=matchSpecies(retry.text,pokemon);nameTexts.push(retry.text);nameReadings.push(retry);
    if(alternative.exact){match=alternative;confidence=retry.confidence;break;}
   }
   if(!match.exact)for(const width of [360,540]){
-   const retry=await read(`名前 縮小 ${width}`,rects.name,false,'','11',null,nameAtWidth(canvas,width)),alternative=matchSpecies(retry.text,pokemon);nameTexts.push(retry.text);
+   const retry=await read(`名前 縮小 ${width}`,rects.name,false,'','11',null,nameAtWidth(canvas,width)),alternative=matchSpecies(retry.text,pokemon);nameTexts.push(retry.text);nameReadings.push(retry);
    if(alternative.exact){match=alternative;confidence=retry.confidence;break;}
   }
  }
  // Keep the broad sparse-text pass only as a fallback for different layouts.
  if(!match.exact||decideCP(cpReadings).cp==null){
   const fallback=await read('配置違いの補助読取',rects.top,false);
-  nameTexts.push(fallback.text);
+  nameTexts.push(fallback.text);nameReadings.push(fallback);
   // This pass is also used for ambiguous names/forms. Its unrelated digits
   // must never invalidate an already agreed dedicated CP-field reading.
   if(decideCP(cpReadings).cp==null)cpReadings.push({...fallback,expectedDigits:cpReadings[0]?.expectedDigits,minConfidence:cpReadings[0]?.minConfidence});
@@ -182,6 +190,10 @@ export async function recognizeFields(worker,canvas,pokemon){
   else if(!match.id&&!match.exact&&alternative.id){match=alternative;confidence=fallback.confidence;}
   else if(!match.id&&!match.exact&&alternative.exact){match=alternative;confidence=fallback.confidence;}
   else if(!match.id)match={...match,candidates:[...new Set([...match.candidates,...alternative.candidates])].slice(0,8)};
+ }
+ if(!match.id&&!match.exact){
+  match=resolveSemiVoicedName(match,pokemon,nameReadings,canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height));
+  if(match.nameEvidence)trace.push(`[名前の半濁点確認]\n名前本体の複数回一致と${match.nameEvidence.count}個の閉じた小円を確認`);
  }
  if(match.candidates?.some(id=>id==='nidoran_female'||id==='nidoran_male')){
   const symbol=detectGenderSymbol(canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height));
@@ -196,7 +208,8 @@ export async function recognizeFields(worker,canvas,pokemon){
    const valid=labels.filter(r=>r.confidence>=45&&parseTypes(r.text).length),common=valid.length>1?parseTypes(valid[0].text).filter(t=>parseTypes(valid[1].text).includes(t)):valid[0]?.confidence>=75?parseTypes(valid[0].text):[];
    const iconTypes=detectBadgeTypes(image,badges);
    evidence={count:badges.count,types:[...new Set([...common,...iconTypes])]};resolved=resolveForm(match,pokemon,evidence);
-   trace.push(`[タイプ図形の補助判定]\n${iconTypes.includes('water')?'青い円の中に水滴形を確認（みず）':'形と色を確認できません'}`);
+   const iconNames={water:'水滴形（みず）',poison:'輪形（どく）',ground:'山形（じめん）',fairy:'ひし形（フェアリー）'};
+   trace.push(`[タイプ図形の補助判定]\n${iconTypes.length?'図形と色を確認：'+iconTypes.map(t=>iconNames[t]).join(' / '):'形と色を確認できません'}`);
   }
   match=resolved;trace.push(`[姿の画像判定]\nタイプアイコン ${badges.count??'不明'}個 / タイプ ${evidence.types.join(',')||'未読取'} / ${match.visual?match.id:'一意に判定できません'}`);
  }

@@ -9,3 +9,12 @@ test('a changed text signature starts a new page even when the broad background 
  const s=new StableScenes(),hash=new Array(384).fill(10),a=new Array(2048).fill(0),b=a.map((v,i)=>i<100?1:v);
  const emitted=[a,a,a,a,b,b,b,b].map(page=>s.push(hash,page)).filter(x=>x.newScene);assert.equal(emitted.length,2);
 });
+
+// Generated upper-card rules must not outrank the real lower appraisal bars.
+test('upper name and background rules cannot become appraisal IVs',()=>{
+ const image=fixture([6,9,2]),{width,height,data}=image;
+ for(let j=0;j<3;j++)for(let y=365+j*40;y<373+j*40;y++)for(let x=35;x<215;x++)data.set(j===0?[226,216,210,255]:[246,116,140,255],(y*width+x)*4);
+ assert.deepEqual(detectBars(image).ivs,[6,9,2]);
+ const onlyRules={width,height,data:data.slice()};for(let y=470;y<570;y++)for(let x=0;x<width;x++)onlyRules.data.set([255,255,255,255],(y*width+x)*4);
+ assert.deepEqual(detectBars(onlyRules).ivs,[null,null,null]);
+});

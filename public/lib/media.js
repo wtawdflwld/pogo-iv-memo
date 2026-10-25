@@ -1,6 +1,6 @@
 import {StableScenes,BarConsensus} from './vision.js';
 import {recognizeFields,recognizeCP} from './ocr.js';
-const READER_VERSION='1.2.5';
+const READER_VERSION='1.2.6';
 let ocrPromise,currentOCRProgress=()=>{},visionWorker,jobId=0;const visionJobs=new Map();
 export function inspectCanvas(canvas,calibration=null){
  if(!visionWorker){visionWorker=new Worker(new URL('./vision-worker.js',import.meta.url),{type:'module'});visionWorker.onmessage=({data})=>{const j=visionJobs.get(data.id);if(j){visionJobs.delete(data.id);data.error?j.reject(Error(data.error)):j.resolve(data.result);}};visionWorker.onerror=e=>{for(const j of visionJobs.values())j.reject(Error(e.message||'画像解析Workerに失敗'));visionJobs.clear();visionWorker.terminate();visionWorker=null;};}
@@ -41,7 +41,7 @@ export async function analyzeCanvas(canvas,pokemon,source,onProgress,calibration
  if(conflict)notes.push('CPの複数回の読み取りが一致しないため、値を空欄にしました');
  if(ocrError)notes.push('OCRに失敗: '+ocrError);
  notes.push('自動読取は候補です。種類・フォルム・IVを確認して確定してください');
- return emptyRecord(source,{speciesId:match.id,atk:bars.ivs[0],def:bars.ivs[1],hp:bars.ivs[2],cp,gender:match.gender||null,genderEvidence:match.genderEvidence||null,thumbnail,readerVersion:READER_VERSION,ocrText:`[読取 v${READER_VERSION} / ${canvas.width}×${canvas.height}]\n${text}`,candidates:match.candidates,formEvidence:match.evidence||null,geometry:bars.geometry,confidence:{bars:bars.confidence,ocr:confidence},notes});
+ return emptyRecord(source,{speciesId:match.id,atk:bars.ivs[0],def:bars.ivs[1],hp:bars.ivs[2],cp,...(match.cosmeticMerged?{noEvolve:true}:{}),gender:match.gender||null,genderEvidence:match.genderEvidence||null,thumbnail,readerVersion:READER_VERSION,ocrText:`[読取 v${READER_VERSION} / ${canvas.width}×${canvas.height}]\n${text}`,candidates:match.candidates,formEvidence:match.evidence||null,geometry:bars.geometry,confidence:{bars:bars.confidence,ocr:confidence},notes});
 }
 function cpHeader(canvas){
  const header=document.createElement('canvas');header.width=canvas.width;header.height=Math.ceil(canvas.height*.24);
