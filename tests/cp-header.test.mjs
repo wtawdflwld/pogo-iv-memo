@@ -29,8 +29,8 @@ test('localized numeric CP reads still reject disagreement, low confidence and i
  assert.equal(agreeCP([r('582'),r('587')]).cp,null);assert.equal(agreeCP([r('0'),r('0')]).cp,null);
  assert.equal(agreeCP([r('582',10),r('582',10)]).cp,null);
 });
-async function retryCase(outputs){
- const previous=globalThis.document,parameters=[],draws=[],image=header();
+async function retryCase(outputs,image=header()){
+ const previous=globalThis.document,parameters=[],draws=[];
  globalThis.document={createElement:()=>({getContext:()=>({fillRect(){},drawImage(...args){draws.push(args)},putImageData(){}})})};
  const worker={setParameters:async p=>{parameters.push(p)},recognize:async()=>{const [text,confidence]=outputs.shift();return {data:{text,confidence}}}};
  try{return {result:await recognizeCP(worker,{width:image.width,height:image.height,getContext:()=>({getImageData:()=>({...image,data:image.data.slice()})})}),parameters,draws};}finally{globalThis.document=previous;}
@@ -42,6 +42,36 @@ test('a prefix-verified raw digit line can recover when both masked reads are em
  const region=locateCPDigits(header());assert.ok(draws.slice(-2).every(args=>args[1]===region.x+3&&args[3]===region.width-6));
 });
 test('additional digit segmentation cannot conceal conflicting dedicated CP readings',async()=>{
- const {result}=await retryCase([['CP582',90],['CP587',90],['582',90],['582',90],['582',90],['582',90]]);
+ const {result}=await retryCase([['CP582',90],['CP587',90],['582',90],['582',90],['582',90],['582',90],['582',90],['582',90]]);
  assert.equal(result.cp,null);assert.equal(result.conflict,true);
+});
+test('a bright background is separated with a stricter white mask without accepting low-confidence broad text',async()=>{
+ const image=header();for(let i=0;i<image.data.length;i+=4)if(!image.data[i])image.data.set([210,215,225,255],i);
+ assert.equal(locateCPDigits(image,185),null);assert.equal(locateCPDigits(image,220).digitCount,3);
+ const {result}=await retryCase([['CP582',4],['CP582',4],['582',90],['582',90]],image);
+ assert.equal(result.cp,582);assert.match(result.text,/CP 数字分離 220/);
+});
+test('numeric OCR length must match the independently located digit count; same-length conflicts still stay unknown',()=>{
+ const r=(text,confidence=90)=>({text,confidence,digits:true,expectedDigits:3});
+ assert.equal(agreeCP([r('582'),r('7582')]).cp,582);
+ assert.equal(agreeCP([r('582'),r('58')]).cp,582);
+ assert.equal(agreeCP([r('582'),r('587')]).cp,null);
+ assert.equal(agreeCP([r('7582'),r('7582')]).cp,null);
+ assert.equal(agreeCP([r('582',4),r('7582')]).cp,null);
+});
+test('digit-count validation is carried through the actual CP reader and explains a discarded extra digit',async()=>{
+ const {result}=await retryCase([['',0],['',0],['582',89],['7582',90]]);
+ assert.equal(result.cp,582);assert.equal(result.conflict,false);assert.match(result.text,/3桁の画像に4桁の読取/);assert.match(result.text,/採用 582/);
+});
+test('one medium-confidence alternative cannot veto repeated strong agreement, but supported conflicts remain unknown',()=>{
+ const r=(text,confidence)=>({text,confidence,digits:true,expectedDigits:3});
+ assert.equal(agreeCP([r('758',63),r('582',90),r('582',92)]).cp,582);
+ assert.equal(agreeCP([r('758',76),r('582',90),r('582',92)]).cp,null);
+ assert.equal(agreeCP([r('758',63),r('758',62),r('582',90),r('582',92)]).cp,null);
+ assert.equal(agreeCP([r('758',63)]).cp,null);
+});
+test('low-confidence large glyphs can be retried at a bounded height without lowering the acceptance threshold',async()=>{
+ const {result,draws}=await retryCase([['CP582',0],['CP582',0],['582',0],['582',0],['582',0],['582',0],['582',90],['582',90]]);
+ assert.equal(result.cp,582);assert.match(result.text,/CP 数字サイズ統一/);
+ assert.ok(draws.slice(-2).every(args=>args[8]===48),'Both normalized OCR images use a 48px content height');
 });

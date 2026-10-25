@@ -1,6 +1,6 @@
 import {StableScenes,BarConsensus} from './vision.js';
 import {recognizeFields,recognizeCP} from './ocr.js';
-const READER_VERSION='1.2.1';
+const READER_VERSION='1.2.2';
 let ocrPromise,currentOCRProgress=()=>{},visionWorker,jobId=0;const visionJobs=new Map();
 export function inspectCanvas(canvas,calibration=null){
  if(!visionWorker){visionWorker=new Worker(new URL('./vision-worker.js',import.meta.url),{type:'module'});visionWorker.onmessage=({data})=>{const j=visionJobs.get(data.id);if(j){visionJobs.delete(data.id);data.error?j.reject(Error(data.error)):j.resolve(data.result);}};visionWorker.onerror=e=>{for(const j of visionJobs.values())j.reject(Error(e.message||'画像解析Workerに失敗'));visionJobs.clear();visionWorker.terminate();visionWorker=null;};}

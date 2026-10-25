@@ -28,11 +28,11 @@ export function locateCPDigits(image,minBrightness=185,frameHeight=image.height)
   if(digits.some((p,i)=>i>0&&p.x-(digits[i-1].x+digits[i-1].width)>w*.045))continue;
   const x=Math.min(...digits.map(p=>p.x)),y=Math.min(...digits.map(p=>p.y)),r=Math.max(...digits.map(p=>p.x+p.width)),b=Math.max(...digits.map(p=>p.y+p.height));
   if(x<w*.32||r>w*.69||r-x<w*.055)continue;
-  return {x:x-3,y:y-3,width:r-x+6,height:b-y+6,threshold:minBrightness};
+  return {x:x-3,y:y-3,width:r-x+6,height:b-y+6,threshold:minBrightness,digitCount:digits.length};
  }return null;
 }
-export function cropText(canvas,rect,enhance=false){
- const out=document.createElement('canvas'),scale=Math.max(1,Math.min(3,1200/rect.width)),padding=16;
+export function cropText(canvas,rect,enhance=false,targetHeight=null){
+ const out=document.createElement('canvas'),scale=targetHeight?targetHeight/rect.height:Math.max(1,Math.min(3,1200/rect.width)),padding=16;
  out.width=Math.round(rect.width*scale)+padding*2;out.height=Math.round(rect.height*scale)+padding*2;
  const ctx=out.getContext('2d',{willReadFrequently:true});ctx.fillStyle='white';ctx.fillRect(0,0,out.width,out.height);
  if(enhance){
@@ -42,10 +42,10 @@ export function cropText(canvas,rect,enhance=false){
  }
  ctx.drawImage(canvas,rect.x,rect.y,rect.width,rect.height,padding,padding,out.width-padding*2,out.height-padding*2);return out;
 }
-export function cpDigitImage(canvas,rect,threshold=195){
+export function cpDigitImage(canvas,rect,threshold=195,targetHeight=null){
  const input=canvas.getContext('2d',{willReadFrequently:true}).getImageData(rect.x,rect.y,rect.width,rect.height),mono=document.createElement('canvas');mono.width=rect.width;mono.height=rect.height;
  for(let i=0;i<input.data.length;i+=4){const r=input.data[i],g=input.data[i+1],b=input.data[i+2],v=Math.min(r,g,b)>threshold&&Math.max(r,g,b)-Math.min(r,g,b)<(threshold<185?85:45)?0:255;input.data[i]=input.data[i+1]=input.data[i+2]=v;input.data[i+3]=255;}
- mono.getContext('2d').putImageData(input,0,0);return cropText(mono,{x:0,y:0,width:rect.width,height:rect.height});
+ mono.getContext('2d').putImageData(input,0,0);return cropText(mono,{x:0,y:0,width:rect.width,height:rect.height},false,targetHeight);
 }
 export function nameTextImage(canvas,rect){
  const pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(rect.x,rect.y,rect.width,rect.height);
@@ -61,14 +61,21 @@ export function nameTextImage(canvas,rect){
  const ctx=out.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,out.width,out.height);ctx.drawImage(mono,left,top,width,height,12,12,out.width-24,out.height-24);return out;
 }
 export function agreeCP(readings){
- const valid=readings.map(r=>({value:r.digits&&/^\d{2,5}$/.test(r.text.trim())?Number(r.text.trim()):parseCP(r.text),confidence:r.confidence||0})).filter(r=>r.value>=10&&r.value<=20000&&r.confidence>=40);
- const values=[...new Set(valid.map(r=>r.value))];
- return {cp:values.length===1&&(valid.length>=2||valid[0].confidence>=75)?values[0]:null,conflict:values.length>1};
+ const valid=readings.map(r=>{
+  const text=r.text.normalize('NFKC').trim(),digits=r.digits&&/^\d{2,5}$/.test(text),lengthMatches=!r.expectedDigits||text.length===r.expectedDigits;
+  return {value:r.digits?(digits&&lengthMatches?Number(text):null):parseCP(text),confidence:r.confidence||0};
+ }).filter(r=>r.value>=10&&r.value<=20000&&r.confidence>=40);
+ const groups=new Map();for(const r of valid){const group=groups.get(r.value)||[];group.push(r);groups.set(r.value,group);}
+ // A lone medium-confidence reading is not sufficient evidence on its own,
+ // so it must not veto a different value with repeated or strong evidence.
+ // Apply the same acceptance rule to each value before checking conflicts.
+ const supported=[...groups].filter(([,group])=>group.length>=2||group.some(r=>r.confidence>=75)).map(([value])=>value);
+ return {cp:supported.length===1?supported[0]:null,conflict:supported.length>1||(supported.length===0&&groups.size>1)};
 }
 function textReader(worker,canvas,trace){
- return async function read(label,rect,enhance,whitelist='',psm='11',threshold=null,prepared=null){
+ return async function read(label,rect,enhance,whitelist='',psm='11',threshold=null,prepared=null,targetHeight=null){
   await worker.setParameters({tessedit_pageseg_mode:psm,tessedit_char_whitelist:whitelist,preserve_interword_spaces:'1',user_defined_dpi:'300'});
-  const {data}=await worker.recognize(prepared||(threshold==null?cropText(canvas,rect,enhance):cpDigitImage(canvas,rect,threshold)));
+  const {data}=await worker.recognize(prepared||(threshold==null?cropText(canvas,rect,enhance,targetHeight):cpDigitImage(canvas,rect,threshold,targetHeight)));
   const result={text:data.text||'',confidence:data.confidence||0};trace.push(`[${label} / 信頼度 ${Math.round(result.confidence)}]\n${result.text}`);return result;
  };
 }
@@ -78,17 +85,32 @@ async function readCPFields(read,canvas,trace,frameHeight=canvas.height){
  cpReadings.push(await read('CP 原画像',rect,false,whitelist));
  cpReadings.push(await read('CP コントラスト補正',rect,true,whitelist));
  if(agreeCP(cpReadings).cp==null){
-  const pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height),region=locateCPDigits(pixels,185,frameHeight)||locateCPDigits(pixels,150,frameHeight);
+  const pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height);
+  // Brighter backgrounds can merge with white glyphs at the original cutoff.
+  // A stricter white mask separates them before considering tinted text.
+  let region=null;for(const threshold of [185,220,235,150]){region=locateCPDigits(pixels,threshold,frameHeight);if(region)break;}
   if(region){
-   trace.push(`[CP 数字位置]\nx=${region.x}, y=${region.y}, 幅=${region.width}, 高さ=${region.height}`);
-   for(const threshold of [region.threshold,region.threshold+20])cpReadings.push({...await read(`CP 数字分離 ${threshold}`,region,false,'0123456789','7',threshold),digits:true});
+   trace.push(`[CP 数字位置]\nx=${region.x}, y=${region.y}, 幅=${region.width}, 高さ=${region.height} / ${region.digitCount}桁`);
+   const numeric=async(...args)=>{
+    const result={...await read(...args),digits:true,expectedDigits:region.digitCount};
+    const text=result.text.normalize('NFKC').trim();
+    if(/^\d+$/.test(text)&&text.length!==region.digitCount)trace.push(`[CP 桁数確認]\n${region.digitCount}桁の画像に${text.length}桁の読取。採用しません`);
+    return result;
+   };
+   for(const threshold of [region.threshold,Math.min(245,region.threshold+20)])cpReadings.push(await numeric(`CP 数字分離 ${threshold}`,region,false,'0123456789','7',threshold));
    // Hard masks can break thin or compressed strokes. Raw-line segmentation
    // on the same prefix-verified digits preserves their antialiased edges.
    if(agreeCP(cpReadings).cp==null){
     // Exclude the localization padding: it can include the trailing stroke
     // of the smaller P, which a raw-line reader would mistake for another 1.
     const tight={...region,x:region.x+3,width:region.width-6};
-    for(const psm of ['7','13'])cpReadings.push({...await read(`CP 数字輪郭1行 ${psm}`,tight,true,'0123456789',psm),digits:true});
+    for(const psm of ['7','13'])cpReadings.push(await numeric(`CP 数字輪郭1行 ${psm}`,tight,true,'0123456789',psm));
+    if(agreeCP(cpReadings).cp==null){
+     // Device-resolution glyphs were being magnified to roughly 200px high.
+     // Retry a bounded height while keeping the confidence rules unchanged.
+     cpReadings.push(await numeric('CP 数字サイズ統一 白黒',region,false,'0123456789','7',region.threshold,null,48));
+     cpReadings.push(await numeric('CP 数字サイズ統一 輪郭',tight,true,'0123456789','7',null,null,48));
+    }
    }
   }
   else trace.push('[CP 数字分離]\n見出しと数字の位置を特定できません');
@@ -99,8 +121,9 @@ async function readCPFields(read,canvas,trace,frameHeight=canvas.height){
 // the top 24% of the frame, so extra video frames do not retain full images.
 export async function recognizeCP(worker,canvas,frameHeight=canvas.height){
  const trace=[],read=textReader(worker,canvas,trace),readings=await readCPFields(read,canvas,trace,frameHeight);
- return {...agreeCP(readings),text:trace.join('\n')};
+ const result=agreeCP(readings);trace.push(cpDecision(result));return {...result,text:trace.join('\n')};
 }
+function cpDecision({cp,conflict}){return `[CP 最終判定]\n${cp!=null?'採用 '+cp:conflict?'有効な読取同士が不一致。空欄を維持':'信頼度・桁数を満たす読取が不足。空欄を維持'}`;}
 // Each field has its own segmentation and alphabet. Never OCR the model and
 // dialogue as one uniform paragraph, or reinterpret HP digits as CP.
 export async function recognizeFields(worker,canvas,pokemon){
@@ -134,5 +157,5 @@ export async function recognizeFields(worker,canvas,pokemon){
   }
   match=resolved;trace.push(`[姿の画像判定]\nタイプアイコン ${badges.count??'不明'}個 / タイプ ${evidence.types.join(',')||'未読取'} / ${match.visual?match.id:'一意に判定できません'}`);
  }
- const cp=agreeCP(cpReadings);return {...cp,match,confidence,text:trace.join('\n')};
+ const cp=agreeCP(cpReadings);trace.push(cpDecision(cp));return {...cp,match,confidence,text:trace.join('\n')};
 }
