@@ -2,16 +2,26 @@ import test from 'node:test';import assert from 'node:assert/strict';import {rea
 import {detectTypeBadges,parseTypes,resolveForm} from '../public/lib/forms.js';import {matchSpecies} from '../public/lib/vision.js';
 import {recognizeFields} from '../public/lib/ocr.js';
 const pokemon=JSON.parse(readFileSync(new URL('../public/data/pokemon.json',import.meta.url),'utf8')).pokemon;
-function badges(count=2,scale=1){
+function badges(count=2,scale=1,offset=0){
  const width=360*scale,height=780*scale,data=new Uint8ClampedArray(width*height*4);for(let i=0;i<data.length;i+=4)data.set([242,197,194,255],i);
- for(const x of count===1?[180]:[160,198])for(let yy=400*scale;yy<445*scale;yy++)for(let xx=(x-15)*scale;xx<(x+15)*scale;xx++){
+ for(const x of count===1?[180+offset]:[160,198])for(let yy=400*scale;yy<445*scale;yy++)for(let xx=(x-15)*scale;xx<(x+15)*scale;xx++){
   const d=Math.hypot(xx-x*scale,yy-421*scale);if(d<=11*scale)data.set(d<3*scale?[240,230,230,255]:[120,90,104,255],(yy*width+xx)*4);
  }return {width,height,data};
 }
-test('synthetic complete type-badge pairs detected at multiple resolutions; a lone badge is not proof of single type',()=>{
+test('complete pairs and centered single badges with clear flanks are detected; off-center remnants stay unknown',()=>{
  for(const scale of [1,2])assert.equal(detectTypeBadges(badges(2,scale)).count,2);
- assert.equal(detectTypeBadges(badges(1)).count,null);
+ for(const scale of [1,2])assert.equal(detectTypeBadges(badges(1,scale)).count,1);
+ assert.equal(detectTypeBadges(badges(1,1,-20)).count,null);assert.equal(detectTypeBadges(badges(1,1,18)).count,null);
  const blank=badges(0);blank.data.fill(255);assert.equal(detectTypeBadges(blank).count,null);
+});
+test('an obscured flank cannot establish a single-type layout',()=>{
+ const im=badges(1);for(let y=417;y<=425;y++)for(let x=196;x<=204;x++)im.data.set([100,100,100,255],(y*im.width+x)*4);
+ assert.equal(detectTypeBadges(im).count,null);
+ const far=badges(1);for(let y=411;y<=419;y++)for(let x=214;x<=222;x++)far.data.set([100,100,100,255],(y*far.width+x)*4);assert.equal(detectTypeBadges(far).count,null);
+});
+test('verified single-type layouts resolve normal Yamask and Hero Zamazenta',()=>{
+ assert.equal(resolveForm(matchSpecies('デスマス',pokemon),pokemon,{count:1}).id,'yamask');
+ assert.equal(resolveForm(matchSpecies('ザマゼンタ',pokemon),pokemon,{count:1}).id,'zamazenta_hero');
 });
 test('public type metadata resolves unique normal/regional differences after an exact species name',()=>{
  for(const [name,id] of [['コラッタ','rattata_alolan'],['ジグザグマ','zigzagoon_galarian']]){

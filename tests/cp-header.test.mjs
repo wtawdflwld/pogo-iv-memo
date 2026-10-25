@@ -41,15 +41,15 @@ test('a prefix-verified raw digit line can recover when both masked reads are em
  assert.deepEqual(parameters.slice(-2).map(p=>p.tessedit_pageseg_mode),['7','13']);assert.ok(parameters.slice(-2).every(p=>p.tessedit_char_whitelist==='0123456789'));
  const region=locateCPDigits(header());assert.ok(draws.slice(-2).every(args=>args[1]===region.x+3&&args[3]===region.width-6));
 });
-test('additional digit segmentation cannot conceal conflicting dedicated CP readings',async()=>{
+test('agreement of both verified normalized numeric modes resolves a conflicting broad crop',async()=>{
  const {result}=await retryCase([['CP582',90],['CP587',90],['582',90],['582',90],['582',90],['582',90],['582',90],['582',90]]);
- assert.equal(result.cp,null);assert.equal(result.conflict,true);
+ assert.equal(result.cp,582);assert.equal(result.conflict,false);assert.equal(result.method,'localized');
 });
 test('a bright background is separated with a stricter white mask without accepting low-confidence broad text',async()=>{
  const image=header();for(let i=0;i<image.data.length;i+=4)if(!image.data[i])image.data.set([210,215,225,255],i);
  assert.equal(locateCPDigits(image,185),null);assert.equal(locateCPDigits(image,220).digitCount,3);
  const {result}=await retryCase([['CP582',4],['CP582',4],['582',90],['582',90]],image);
- assert.equal(result.cp,582);assert.match(result.text,/CP 数字分離 220/);
+ assert.equal(result.cp,582);assert.match(result.text,/CP 数字分離 2\d\d/);
 });
 test('numeric OCR length must match the independently located digit count; same-length conflicts still stay unknown',()=>{
  const r=(text,confidence=90)=>({text,confidence,digits:true,expectedDigits:3});
@@ -79,8 +79,8 @@ test('agreement of broad CP reads never skips visible digit-count and numeric-cr
  const {result,parameters}=await retryCase([['CP7582',46],['CP7582',46],['582',90],['582',90]]);
  assert.equal(result.cp,582);assert.equal(parameters.length,4);assert.match(result.text,/3桁の画像に4桁のCP読取/);
 });
-test('same-length strong disagreement between broad CP and digit-only reads remains unknown',async()=>{
- const {result}=await retryCase([['CP587',90],['CP587',90],['582',90],['582',90],['582',90],['582',90],['582',90],['582',90]]);
+test('disagreement between the two verified normalized numeric modes remains unknown',async()=>{
+ const {result}=await retryCase([['CP587',90],['CP587',90],['582',90],['582',90],['582',90],['582',90],['582',90],['587',90]]);
  assert.equal(result.cp,null);assert.equal(result.conflict,true);
 });
 test('two matching medium-confidence broad reads cannot establish CP without a located header',async()=>{

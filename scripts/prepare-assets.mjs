@@ -23,7 +23,7 @@ const source=(await get(`https://raw.githubusercontent.com/pvpoke/pvpoke/${pv}/s
 const cpms=JSON.parse(source.match(/var cpms = (\[[^;]+\])/)[1]).slice(0,99);
 const csv=(await get(`https://raw.githubusercontent.com/PokeAPI/pokeapi/${pa}/data/v2/csv/pokemon_species_names.csv`,'.downloads/names.csv')).toString();
 const names=new Map(csv.split(/\r?\n/).slice(1).map(l=>l.split(',')).filter(a=>a[1]==='1').map(a=>[+a[0],a[2]]));
-const translations={Alolan:'アローラ',Galarian:'ガラル',Hisuian:'ヒスイ',Paldean:'パルデア',Attack:'アタック',Defense:'ディフェンス',Speed:'スピード',Normal:'ノーマル',Origin:'オリジン',Altered:'アナザー',Therian:'れいじゅう',Incarnate:'けしん',Plant:'くさき',Sandy:'すなち',Trash:'ゴミ',Sunny:'たいよう',Rainy:'あまみず',Snowy:'ゆきぐも',Sunshine:'ポジ',Overcast:'ネガ',Confined:'いましめ',Unbound:'ときはなたれし',Average:'ふつう',Small:'ちいさい',Large:'おおきい',Super:'とくだい',Male:'オス',Female:'メス',Aria:'ボイス',Pirouette:'ステップ',Land:'ランド',Sky:'スカイ',West:'にし',East:'ひがし',Zen:'ダルマ',Standard:'ノーマル',Complete:'パーフェクト',Midday:'まひる',Midnight:'まよなか',Dusk:'たそがれ'};
+const translations={Hero:'れきせんのゆうしゃ','Crowned Shield':'たてのおう','Crowned Sword':'けんのおう',Alolan:'アローラ',Galarian:'ガラル',Hisuian:'ヒスイ',Paldean:'パルデア',Attack:'アタック',Defense:'ディフェンス',Speed:'スピード',Normal:'ノーマル',Origin:'オリジン',Altered:'アナザー',Therian:'れいじゅう',Incarnate:'けしん',Plant:'くさき',Sandy:'すなち',Trash:'ゴミ',Sunny:'たいよう',Rainy:'あまみず',Snowy:'ゆきぐも',Sunshine:'ポジ',Overcast:'ネガ',Confined:'いましめ',Unbound:'ときはなたれし',Average:'ふつう',Small:'ちいさい',Large:'おおきい',Super:'とくだい',Male:'オス',Female:'メス',Aria:'ボイス',Pirouette:'ステップ',Land:'ランド',Sky:'スカイ',West:'にし',East:'ひがし',Zen:'ダルマ',Standard:'ノーマル',Complete:'パーフェクト',Midday:'まひる',Midnight:'まよなか',Dusk:'たそがれ'};
 const condition={
  'eevee>espeon':'相棒で10km歩き、相棒のまま昼に進化（初回の名前指定例外あり）',
  'eevee>umbreon':'相棒で10km歩き、相棒のまま夜に進化（初回の名前指定例外あり）',
@@ -58,12 +58,12 @@ const condition={
  'happiny>chansey':'相棒で15km歩く','bonsly>sudowoodo':'相棒で15km歩く','mime_jr>mr_mime':'相棒で15km歩く','feebas>milotic':'相棒で20km歩く',
  'floette>florges':'相棒にしてハート20個','poipole>naganadel':'相棒にしてドラゴンタイプ20匹捕獲'
 };
-const valid=gm.pokemon.filter(p=>p.released && !p.speciesId.includes('_shadow') && !p.tags?.includes('mega') && !/(_mega|_primal|_xs)/.test(p.speciesId) && !p.aliasId && p.baseStats?.atk>0);
+const valid=gm.pokemon.filter(p=>(p.released||p.speciesId==='ditto') && !p.speciesId.includes('_shadow') && !p.tags?.includes('mega') && !/(_mega|_primal|_xs)/.test(p.speciesId) && !p.aliasId && p.baseStats?.atk>0);
 const ids=new Set(valid.map(p=>p.speciesId));
 const pokemon=valid.map(p=>{
  const form=p.speciesName.match(/\((.+)\)/)?.[1]||'';
  return {id:p.speciesId,dex:p.dex,name:names.get(p.dex)||p.speciesName,english:p.speciesName,form:form.split(', ').map(f=>translations[f]||f).join('・'),types:p.types.filter(t=>t!=='none'),stats:p.baseStats,
-  evolutions:(p.family?.evolutions||[]).filter(id=>ids.has(id)).map(id=>({id,condition:condition[`${p.speciesId}>${id}`]||'アメとゲーム内の進化条件が必要。性別・相棒・時間帯・地域・イベントなどの制限はゲーム内の進化ボタンで確認してください。'}))};
+  ...(p.speciesId==='ditto'?{pvpExcluded:true,pvpExcludedReason:'メタモンはトレーナーバトルの対象外です。個体は保存できますが、順位は計算しません。'}:{}),evolutions:(p.family?.evolutions||[]).filter(id=>ids.has(id)).map(id=>({id,condition:condition[`${p.speciesId}>${id}`]||'アメとゲーム内の進化条件が必要。性別・相棒・時間帯・地域・イベントなどの制限はゲーム内の進化ボタンで確認してください。'}))};
 });
 // Audit evolution routes against the GO Game Master, rather than inheriting
 // main-series-only evolution links. Only factual parameters are extracted.

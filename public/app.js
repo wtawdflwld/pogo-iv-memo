@@ -23,6 +23,7 @@ function rankCell(r){
 }
 function rankHTML(r){
  if(r.status!=='confirmed')return '<p class="record-note">要確認として保存できます。種類・フォルム・個体値を確認して確定すると順位を表示します。</p>';
+ if(byId.get(r.speciesId)?.pvpExcluded)return `<p class="record-note">${esc(byId.get(r.speciesId).pvpExcludedReason)}</p>`;
  if(!r.ranks?.length)return '<p class="record-note">計算結果を取得できません。編集画面からもう一度反映してください。</p>';
  const speciesIds=[...new Set(r.ranks.map(v=>v.speciesId))];
  return `<table class="rank-table"><thead><tr><th>評価対象</th><th>スーパー / 1,500</th><th>ハイパー / 2,500</th></tr></thead><tbody>${speciesIds.map(id=>{

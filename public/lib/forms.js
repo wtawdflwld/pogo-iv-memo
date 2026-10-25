@@ -1,6 +1,6 @@
 // Read the on-screen type badges, not a nickname or capture location.
-// A one-badge observation can be an occluded pair, so only a complete pair is
-// used as independent evidence for the number of types.
+// A lone off-center badge can be an occluded pair. A single type requires a
+// complete centered circle and visible, empty badge positions on both sides.
 function luma(image,x,y){const i=(Math.round(y)*image.width+Math.round(x))*4,d=image.data;return (d[i]+d[i+1]+d[i+2])/3;}
 export function detectTypeBadges(image){
  const {width:w,height:h,data}=image;if(!w||!h||data.length!==w*h*4)return {count:null,badges:[]};
@@ -13,6 +13,16 @@ export function detectTypeBadges(image){
  }
  const badges=[];for(const hit of hits.sort((a,b)=>b.score-a.score))if(!badges.some(b=>Math.hypot((b.x-hit.x)*w,(b.y-hit.y)*h)<w*.04))badges.push(hit);
  for(const a of badges)for(const b of badges){const gap=b.x-a.x;if(gap>.075&&gap<.145&&Math.abs(a.y-b.y)<.009&&Math.abs(a.radius-b.radius)<.009)return {count:2,badges:[a,b]};}
+ // A complete centered disc and clear flanks establish the single-type
+ // layout. A remaining off-center disc from an occluded pair does not.
+ for(const badge of badges.filter(b=>Math.abs(b.x-.505)<.035)){
+  const clear=[-.105,-.055,.055,.105].every(offset=>{const cx=badge.x+offset;
+   const samples=[],ys=Math.abs(offset)>.08?[-.012,-.009,-.006]:[-.007,0,.007];
+   for(const dy of ys)for(const dx of [-.012,0,.012])samples.push(luma(image,(cx+dx)*w,(badge.y+dy)*h));
+   return Math.min(...samples)>165&&Math.max(...samples)-Math.min(...samples)<24;
+  });
+  if(clear&&badges.every(b=>b===badge||Math.abs(b.x-badge.x)<.04))return {count:1,badges:[badge]};
+ }
  return {count:null,badges:badges.slice(0,2)};
 }
 const typeNames={normal:'ノーマル',fire:'ほのお',water:'みず',electric:'でんき',grass:'くさ',ice:'こおり',fighting:'かくとう',poison:'どく',ground:'じめん',flying:'ひこう',psychic:'エスパー',bug:'むし',rock:'いわ',ghost:'ゴースト',dragon:'ドラゴン',dark:'あく',steel:'はがね',fairy:'フェアリー'};
@@ -24,6 +34,6 @@ export function resolveForm(match,pokemon,{count=null,types=[]}={}){
  if(new Set(candidates.map(p=>p.dex)).size!==1||candidates.length<2||candidates.some(p=>!p.types?.length))return match;
  // A count alone must narrow the original complete set to exactly one form.
  const filtered=candidates.filter(p=>(count==null||p.types.length===count)&&types.every(t=>p.types.includes(t)));
- if(filtered.length!==1||(!types.length&&count!==2))return match;
+ if(filtered.length!==1||(!types.length&&count!==2&&count!==1))return match;
  return {id:filtered[0].id,candidates:[filtered[0].id],exact:true,visual:true,reason:'画像のタイプ表示から姿を判定しました。見た目とフォルムを確認してください',evidence:{typeCount:count,types}};
 }

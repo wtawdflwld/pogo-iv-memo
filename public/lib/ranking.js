@@ -40,6 +40,7 @@ export function evolutionPaths(id,byId,record=null) {
   } walk(id);return out;
 }
 export function eligibility(record,current,target,cap,cpms) {
+  if(current.pvpExcluded||target.pvpExcluded)return {state:'unusable',text:current.pvpExcludedReason||target.pvpExcludedReason||'トレーナーバトルの対象外'};
   if(Number.isInteger(record.cp)&&record.cp>cap)return {state:'unusable',text:'現在CPが上限超過'};
   const levels=possibleLevels(current,record,record.cp,cpms);
   if(!levels.length)return {state:'unknown',text:record.cp==null?'現在CP不明・参加可否は未確認':'CPと種族・IVが整合しません。レベル／参加可否は未確認'};

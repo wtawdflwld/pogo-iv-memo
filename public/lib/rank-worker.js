@@ -5,6 +5,7 @@ self.onmessage=({data})=>{
   if(data.type==='init'){db=data.db;byId=new Map(db.pokemon.map(p=>[p.id,p]));self.postMessage({id:data.id,result:true});return;}
   const r=data.record;
   if(r.status!=='confirmed'||!complete(r)||!byId.has(r.speciesId)){self.postMessage({id:data.id,result:[]});return;}
+  if(byId.get(r.speciesId).pvpExcluded){self.postMessage({id:data.id,result:[]});return;}
   const results=[];
   for(const {species,conditions,unverifiedGender} of evolutionPaths(r.speciesId,byId,r))for(const cap of [1500,2500]){
     const key=species.id+':'+cap;
