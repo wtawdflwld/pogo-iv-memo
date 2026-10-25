@@ -77,12 +77,19 @@ export function parseCP(text){
  const values=[...text.normalize('NFKC').matchAll(/c\s*p\s*[:.・]?\s*([0-9OIlSB]+(?:[ ,]+[0-9]+)*)(?![A-Za-z0-9])/gi)].map(m=>m[1].replace(/[ ,]/g,'').replace(/O/gi,'0').replace(/[Il]/g,'1').replace(/S/gi,'5').replace(/B/gi,'8')).filter(s=>/^\d{2,5}$/.test(s)).map(Number).filter(v=>v>=10&&v<=20000);
  const unique=[...new Set(values)];return unique.length===1?unique[0]:null;
 }
-const normalize=s=>s.normalize('NFKC').replace(/[\s\p{P}\p{S}]/gu,'').toLowerCase();
+// These two symbols are part of distinct species names, not punctuation.
+const normalize=s=>s.normalize('NFKC').replace(/[\s\p{P}\p{S}]/gu,c=>c==='♀'||c==='♂'?c:'').toLowerCase();
 export function matchSpecies(text,pokemon) {
  const lines=text.split(/\n/).map(normalize).filter(Boolean);
  const matches=pokemon.filter(p=>lines.some(l=>l===normalize(p.name)||l===normalize(p.english)));
  const dex=new Set(matches.map(p=>p.dex));
  if(dex.size!==1){
+  // The exact shared Nidoran stem is a known two-species family. Do not mix
+  // it with fuzzy neighbors such as ヤドラン while waiting for the sex glyph.
+  if(!matches.length&&lines.some(line=>line==='ニドラン'||line==='nidoran')){
+   const family=pokemon.filter(p=>p.id==='nidoran_female'||p.id==='nidoran_male');
+   if(family.length===2)return {id:null,candidates:family.map(p=>p.id),reason:'ニドランの性別記号を確認してください'};
+  }
   // Similar spelling is a review suggestion, never an automatic species ID.
   const suggestions=matches.length?matches:pokemon.filter(p=>lines.some(l=>{
    const n=normalize(p.name);return l.length>=4&&Math.abs(l.length-n.length)<=1&&editDistance(l,n)<=1;

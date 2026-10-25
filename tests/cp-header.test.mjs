@@ -75,3 +75,16 @@ test('low-confidence large glyphs can be retried at a bounded height without low
  assert.equal(result.cp,582);assert.match(result.text,/CP 数字サイズ統一/);
  assert.ok(draws.slice(-2).every(args=>args[8]===48),'Both normalized OCR images use a 48px content height');
 });
+test('agreement of broad CP reads never skips visible digit-count and numeric-crop verification',async()=>{
+ const {result,parameters}=await retryCase([['CP7582',46],['CP7582',46],['582',90],['582',90]]);
+ assert.equal(result.cp,582);assert.equal(parameters.length,4);assert.match(result.text,/3桁の画像に4桁のCP読取/);
+});
+test('same-length strong disagreement between broad CP and digit-only reads remains unknown',async()=>{
+ const {result}=await retryCase([['CP587',90],['CP587',90],['582',90],['582',90],['582',90],['582',90],['582',90],['582',90]]);
+ assert.equal(result.cp,null);assert.equal(result.conflict,true);
+});
+test('two matching medium-confidence broad reads cannot establish CP without a located header',async()=>{
+ const image=header();image.data.fill(255);
+ assert.equal((await retryCase([['CP7582',46],['CP7582',46]],image)).result.cp,null);
+ assert.equal((await retryCase([['CP582',90],['CP582',90]],image)).result.cp,582);
+});

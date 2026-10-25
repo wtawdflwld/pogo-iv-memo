@@ -1,5 +1,6 @@
 import {parseCP,matchSpecies} from './vision.js';
 import {detectTypeBadges,parseTypes,resolveForm} from './forms.js';
+import {detectGenderSymbol,resolveNidoran} from './gender.js';
 
 export function fieldRects(width,height){return {
  cp:{x:Math.round(width*.18),y:Math.round(height*.035),width:Math.round(width*.64),height:Math.round(height*.2)},
@@ -62,9 +63,9 @@ export function nameTextImage(canvas,rect){
 }
 export function agreeCP(readings){
  const valid=readings.map(r=>{
-  const text=r.text.normalize('NFKC').trim(),digits=r.digits&&/^\d{2,5}$/.test(text),lengthMatches=!r.expectedDigits||text.length===r.expectedDigits;
-  return {value:r.digits?(digits&&lengthMatches?Number(text):null):parseCP(text),confidence:r.confidence||0};
- }).filter(r=>r.value>=10&&r.value<=20000&&r.confidence>=40);
+  const text=r.text.normalize('NFKC').trim(),digits=r.digits&&/^\d{2,5}$/.test(text),value=r.digits?(digits?Number(text):null):parseCP(text),lengthMatches=!r.expectedDigits||String(value).length===r.expectedDigits;
+  return {value:lengthMatches?value:null,confidence:r.confidence||0,minConfidence:r.minConfidence||40};
+ }).filter(r=>r.value>=10&&r.value<=20000&&r.confidence>=Math.max(40,r.minConfidence));
  const groups=new Map();for(const r of valid){const group=groups.get(r.value)||[];group.push(r);groups.set(r.value,group);}
  // A lone medium-confidence reading is not sufficient evidence on its own,
  // so it must not veto a different value with repeated or strong evidence.
@@ -84,13 +85,19 @@ async function readCPFields(read,canvas,trace,frameHeight=canvas.height){
  const whitelist='CPcp0123456789OIlSB,.';
  cpReadings.push(await read('CP 原画像',rect,false,whitelist));
  cpReadings.push(await read('CP コントラスト補正',rect,true,whitelist));
- if(agreeCP(cpReadings).cp==null){
+ // Agreement between two broad crops can repeat the same extra digit.
+ // Always check the visible glyph count and a numeric-only crop when found.
+ {
   const pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height);
   // Brighter backgrounds can merge with white glyphs at the original cutoff.
   // A stricter white mask separates them before considering tinted text.
   let region=null;for(const threshold of [185,220,235,150]){region=locateCPDigits(pixels,threshold,frameHeight);if(region)break;}
   if(region){
    trace.push(`[CP 数字位置]\nx=${region.x}, y=${region.y}, 幅=${region.width}, 高さ=${region.height} / ${region.digitCount}桁`);
+   for(const result of cpReadings){
+    result.expectedDigits=region.digitCount;const value=parseCP(result.text);
+    if(value!=null&&String(value).length!==region.digitCount)trace.push(`[CP 桁数確認]\n${region.digitCount}桁の画像に${String(value).length}桁のCP読取。採用しません`);
+   }
    const numeric=async(...args)=>{
     const result={...await read(...args),digits:true,expectedDigits:region.digitCount};
     const text=result.text.normalize('NFKC').trim();
@@ -113,7 +120,12 @@ async function readCPFields(read,canvas,trace,frameHeight=canvas.height){
     }
    }
   }
-  else trace.push('[CP 数字分離]\n見出しと数字の位置を特定できません');
+  else{
+   // Two medium-confidence broad reads are correlated, not independent
+   // verification. Without a located header they must not manufacture a CP.
+   for(const reading of cpReadings)reading.minConfidence=75;
+   trace.push('[CP 数字分離]\n見出しと数字の位置を特定できません。広域読取は信頼度75以上のみ採用します');
+  }
  }
  return cpReadings;
 }
@@ -128,23 +140,29 @@ function cpDecision({cp,conflict}){return `[CP 最終判定]\n${cp!=null?'採用
 // dialogue as one uniform paragraph, or reinterpret HP digits as CP.
 export async function recognizeFields(worker,canvas,pokemon){
  const rects=fieldRects(canvas.width,canvas.height),trace=[],read=textReader(worker,canvas,trace),cpReadings=await readCPFields(read,canvas,trace);
- const name=await read('名前',rects.name,true);let match=matchSpecies(name.text,pokemon),confidence=name.confidence;
+ const name=await read('名前',rects.name,true),nameTexts=[name.text];let match=matchSpecies(name.text,pokemon),confidence=name.confidence;
  if(!match.exact){
   const retry=await read('名前 文字のみ',rects.name,false,'','7',null,nameTextImage(canvas,rects.name)),alternative=matchSpecies(retry.text,pokemon);
+  nameTexts.push(retry.text);
   if(alternative.exact){match=alternative;confidence=retry.confidence;}
   else match={...match,candidates:[...new Set([...match.candidates,...alternative.candidates])].slice(0,8)};
  }
  // Keep the broad sparse-text pass only as a fallback for different layouts.
  if(!match.exact||agreeCP(cpReadings).cp==null){
   const fallback=await read('配置違いの補助読取',rects.top,false);
+  nameTexts.push(fallback.text);
   // This pass is also used for ambiguous names/forms. Its unrelated digits
   // must never invalidate an already agreed dedicated CP-field reading.
-  if(agreeCP(cpReadings).cp==null)cpReadings.push(fallback);
+  if(agreeCP(cpReadings).cp==null)cpReadings.push({...fallback,expectedDigits:cpReadings[0]?.expectedDigits,minConfidence:cpReadings[0]?.minConfidence});
   const alternative=matchSpecies(fallback.text,pokemon);
   if(match.id&&alternative.id&&match.id!==alternative.id){match={id:null,candidates:[match.id,alternative.id],reason:'名前の読み取りが一致しません。種類を確認してください'};}
   else if(!match.id&&!match.exact&&alternative.id){match=alternative;confidence=fallback.confidence;}
   else if(!match.id&&!match.exact&&alternative.exact){match=alternative;confidence=fallback.confidence;}
   else if(!match.id)match={...match,candidates:[...new Set([...match.candidates,...alternative.candidates])].slice(0,8)};
+ }
+ if(match.candidates?.some(id=>id==='nidoran_female'||id==='nidoran_male')){
+  const symbol=detectGenderSymbol(canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height));
+  match=resolveNidoran(match,pokemon,symbol.gender,nameTexts);trace.push(`[ニドラン性別判定]\n画面記号 ${symbol.gender||'不明'} / 種類 ${match.id||'未確定'}`);
  }
  if(!match.id&&match.exact&&match.candidates.every(id=>pokemon.find(p=>p.id===id)?.types?.length)){
   const badges=detectTypeBadges(canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height));

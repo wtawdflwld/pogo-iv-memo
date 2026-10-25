@@ -162,6 +162,7 @@ async function reflect(confirmed){
  for(const k of ['atk','def','hp','cp']){const el=$('#edit-'+k);if(!el.validity.valid){$('#edit-error').textContent='IVは0〜15の整数、CPは10〜20,000の整数で入力してください。';return;}r[k]=el.value.trim()===''?null:Number(el.value);}
  if(r.cp!==editing.cp){r.cpEvidence=null;r.notes=(r.notes||[]).filter(n=>n!=='現在CPを読めません'&&!n.startsWith('CPの複数回の読み取り')&&!n.startsWith('代表フレームのCP読取'));}
  if(r.speciesId!==editing.speciesId)r.formEvidence=null;
+ if(r.speciesId!==editing.speciesId||r.gender!==editing.gender)r.genderEvidence=null;
  if(confirmed&&!complete(r)){$('#edit-error').textContent='種類・フォルムと、攻撃／防御／HPのIVをすべて入力してください。未認識の値は0で補いません。';return;}
  r.status=confirmed?'confirmed':'review';r.updatedAt=new Date().toISOString();r.dataVersion=db.version;
  const buttons=$('#edit-form').querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
